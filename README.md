@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Saul HTML Pro - Bootstrap 5 HTML Multipurpose Admin Dashboard Theme
 
 - For a quick start please check [Online documentation](https://preview.keenthemes.com/html/saul-html-pro/docs)
@@ -19,3 +20,6 @@
   check our marketplace for more amazing products: [Keenthemes Marketplace](https://keenthemes.com)
 
 Happy coding with Saul HTML Pro!
+=======
+# Galaxy
+>>>>>>> d967e6248a046d2eb7284e7d84923b87c56c0f57
