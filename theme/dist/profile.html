@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <title>Profile — Galaxy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="shortcut icon" href="assets/media/logos/favicon.ico" />
+
+  <!-- Template CSS -->
+  <link rel="stylesheet" href="assets/plugins/global/plugins.bundle.css" />
+  <link rel="stylesheet" href="assets/css/style.bundle.css" />
+
+  <!-- Dark look to match your React page -->
+  <style>
+    :root { color-scheme: dark; }
+    :root[data-bs-theme="dark"]{
+      --bs-body-bg:#0f1012;
+      --bs-card-bg:rgba(255,255,255,.06);
+      --bs-card-border-color:rgba(255,255,255,.10);
+      --bs-primary:#22c55e;
+      --bs-primary-rgb:34,197,94;
+    }
+    .card{backdrop-filter:blur(8px);border-radius:16px;}
+    .header-nav a{color:#e5e7eb!important;opacity:.9}
+    .header-nav a.active{color:#fff!important;font-weight:700}
+    .header-nav a:hover{opacity:1;text-decoration:underline}
+    .badge-light-primary{background:rgba(34,197,94,.2);color:#a7f3d0}
+    .menu-rail .menu-link{justify-content:center;gap:.5rem}
+    .menu-rail .menu-title{font-size:.75rem;opacity:.8}
+    .image-input-wrapper.rounded-circle{border-radius:999px!important}
+    .input-ghost{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#fff}
+    .input-ghost::placeholder{color:#9aa0a6}
+    /* edit-mode helpers */
+    .box-edit-btn.d-none{display:none!important;}
+    .editor.d-none{display:none!important;}
+  </style>
+</head>
+
+<body id="kt_app_body" class="app-default app-dark"
+      data-kt-app-layout="light-sidebar"
+      data-kt-app-header-fixed="true"
+      data-kt-app-sidebar-enabled="true"
+      data-kt-app-sidebar-fixed="true">
+
+  <!--begin::Root-->
+  <div class="d-flex flex-column flex-root app-root" id="kt_app_root">
+    <!--begin::Page-->
+    <div class="app-page flex-column flex-column-fluid" id="kt_app_page">
+
+      <!--begin::Header-->
+      <div id="kt_app_header" class="app-header d-flex align-items-stretch">
+        <div class="app-container container-xxl d-flex align-items-center justify-content-between py-3">
+          <nav class="header-nav d-flex flex-wrap gap-4">
+            <a class="active" href="profile.html">Profile</a>
+            <a href="#">Publications</a>
+            <a href="#">Grants</a>
+            <a href="#">Donations</a>
+            <a href="#">Students &amp; Staff</a>
+            <a href="#">Projects</a>
+            <a href="#">Compliance</a>
+            <a href="#">HR</a>
+            <a href="#">Finance</a>
+            <a href="#">IT</a>
+            <a href="#">Courses</a>
+            <a href="#">Outreach</a>
+            <a href="#">Innovation</a>
+          </nav>
+          <div class="d-flex align-items-center gap-2">
+            <button id="editToggle" class="btn btn-light btn-sm">Edit</button>
+            <a href="index.html" class="btn btn-link btn-sm text-white-50">← Home</a>
+          </div>
+        </div>
+      </div>
+      <!--end::Header-->
+
+      <!--begin::Wrapper-->
+      <div class="app-wrapper flex-column flex-row-fluid" id="kt_app_wrapper">
+        <!--begin::Main-->
+        <div class="app-main flex-column flex-row-fluid" id="kt_app_main">
+          <!--begin::Content-->
+          <div id="kt_app_content" class="app-content flex-column-fluid">
+            <div class="app-container container-xxl">
+
+              <!-- LAYOUT: [Avatar panel] [Slim rail] [Main grid] [Right stack] -->
+              <div class="row g-5 g-xl-8">
+
+                <!-- LEFT big avatar card -->
+                <div class="col-xl-3">
+                  <div class="card h-100">
+                    <div class="card-body p-8 text-center">
+
+                      <!-- Single avatar control (ONLY ONE IMAGE NOW) -->
+                      <div class="image-input image-input-outline mb-6" data-kt-image-input="true">
+                        <div class="image-input-wrapper w-160px h-160px rounded-circle" id="avatar_wrapper"
+                             style="background-image:url('assets/media/avatars/300-1.jpg')"></div>
+                        <label class="btn btn-icon btn-circle btn-active-color-primary w-35px h-35px bg-body shadow"
+                               data-kt-image-input-action="change" data-bs-toggle="tooltip" title="Change avatar">
+                          <i class="ki-duotone ki-pencil fs-5"></i>
+                          <input type="file" id="photo_input" accept=".png,.jpg,.jpeg" />
+                          <input type="hidden" name="avatar_remove" />
+                        </label>
+                        <span class="btn btn-icon btn-circle btn-active-color-primary w-35px h-35px bg-body shadow"
+                              data-kt-image-input-action="remove" data-bs-toggle="tooltip" title="Remove avatar">
+                          <i class="ki-duotone ki-trash fs-5"></i>
+                        </span>
+                      </div>
+
+                      <h5 class="fw-bold mb-1" id="profile_name_display">—</h5>
+                      <div class="text-muted">Member</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Slim vertical icon rail -->
+                <div class="col-xl-1 d-none d-xl-block">
+                  <div class="card h-100">
+                    <div class="card-body py-6 px-3">
+                      <div class="menu menu-column menu-rounded menu-rail">
+                        <div class="menu-item py-2">
+                          <a href="index.html" class="menu-link">
+                            <span class="menu-icon"><i class="ki-duotone ki-home fs-2"></i></span>
+                            <span class="menu-title">Home</span>
+                          </a>
+                        </div>
+                        <div class="menu-item py-2">
+                          <a href="#" class="menu-link">
+                            <span class="menu-icon"><i class="ki-duotone ki-element-11 fs-2"></i></span>
+                            <span class="menu-title">Dashboard</span>
+                          </a>
+                        </div>
+                        <div class="menu-item py-2">
+                          <a href="#" class="menu-link">
+                            <span class="menu-icon"><i class="ki-duotone ki-chart-line-up fs-2"></i></span>
+                            <span class="menu-title">Insights</span>
+                          </a>
+                        </div>
+                        <div class="menu-item py-2">
+                          <a href="#" class="menu-link">
+                            <span class="menu-icon"><i class="ki-duotone ki-file-down fs-2"></i></span>
+                            <span class="menu-title">Reports</span>
+                          </a>
+                        </div>
+                        <div class="menu-item py-2">
+                          <a href="#" class="menu-link">
+                            <span class="menu-icon"><i class="ki-duotone ki-setting-3 fs-2"></i></span>
+                            <span class="menu-title">Settings</span>
+                          </a>
+                        </div>
+                        <div class="menu-item py-2">
+                          <a href="#" class="menu-link">
+                            <span class="menu-icon"><i class="ki-duotone ki-question fs-2"></i></span>
+                            <span class="menu-title">Help</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- MAIN grid -->
+                <div class="col-xl-6">
+                  <!-- Dashboard header row -->
+                  <div class="card mb-5">
+                    <div class="card-body d-flex flex-wrap gap-3 align-items-center justify-content-between">
+                      <div class="d-flex align-items-center gap-3">
+                        <img src="assets/media/logos/default-small.svg" class="h-25px" alt="">
+                        <h3 class="fw-bold mb-0">Dashboard</h3>
+                      </div>
+                      <div class="input-group w-350px">
+                        <span class="input-group-text"><i class="ki-duotone ki-magnifier fs-3"></i></span>
+                        <input class="form-control input-ghost" placeholder="Search here …" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Social / Media -->
+                  <div class="row g-5 mb-5">
+                    <div class="col-md-6">
+                      <div class="card h-100">
+                        <div class="card-header align-items-center">
+                          <h3 class="card-title fw-bold m-0">Social Media</h3>
+                          <div class="card-toolbar">
+                            <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                    data-edit-target="#social_media_editor">Edit</button>
+                          </div>
+                        </div>
+                        <div class="card-body">
+                          <ul id="social_media_view" class="ps-7"></ul>
+                          <div id="social_media_editor" class="editor d-none mt-3">
+                            <div class="row g-3 align-items-center mb-3">
+                              <div class="col">
+                                <input id="sm_key" class="form-control input-ghost" placeholder="Platform (e.g., LinkedIn)" />
+                              </div>
+                              <div class="col">
+                                <input id="sm_val" class="form-control input-ghost" placeholder="Handle/URL" />
+                              </div>
+                              <div class="col-auto">
+                                <button class="btn btn-primary" data-add="social_media">Add</button>
+                              </div>
+                            </div>
+                            <div id="social_media_list"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-md-6">
+                      <div class="card h-100">
+                        <div class="card-header align-items-center">
+                          <h3 class="card-title fw-bold m-0">Media Appearances</h3>
+                          <div class="card-toolbar">
+                            <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                    data-edit-target="#media_mentions_editor">Edit</button>
+                          </div>
+                        </div>
+                        <div class="card-body">
+                          <ul id="media_mentions_list" class="ps-7 mb-3"></ul>
+                          <div id="media_mentions_editor" class="editor d-none">
+                            <div class="input-group">
+                              <input class="form-control input-ghost" placeholder="Add mention (e.g., NPR – Mar 2025)" id="media_mentions_input" />
+                              <button class="btn btn-primary" data-add="media_mentions">Add</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Research Area (big) -->
+                  <div class="card mb-5">
+                    <div class="card-header align-items-center">
+                      <h3 class="card-title fw-bold m-0">Research Area</h3>
+                      <div class="card-toolbar">
+                        <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                data-edit-target="#research_editors,#awards_editor,#patents_editor">Edit</button>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <div class="mb-5">
+                        <div class="fw-semibold mb-2">Research Areas</div>
+                        <div id="research_areas_tags" class="d-flex flex-wrap gap-2"></div>
+                        <div id="research_editors" class="editor d-none mt-2">
+                          <input id="research_areas_tagify" class="form-control input-ghost" placeholder="Add areas…" />
+                        </div>
+                      </div>
+
+                      <div class="mb-5">
+                        <div class="fw-semibold mb-2">Awards &amp; Honors</div>
+                        <ul id="awards_list" class="ps-7 mb-3"></ul>
+                        <div id="awards_editor" class="editor d-none">
+                          <div class="row g-3 align-items-center mb-2">
+                            <div class="col-3"><input id="award_year" class="form-control input-ghost" placeholder="Year" /></div>
+                            <div class="col"><input id="award_title" class="form-control input-ghost" placeholder="Title" /></div>
+                            <div class="col-auto"><button class="btn btn-primary" data-add="awards">Add</button></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div class="fw-semibold mb-2">Patents</div>
+                        <ul id="patents_list" class="ps-7 mb-3"></ul>
+                        <div id="patents_editor" class="editor d-none">
+                          <div class="row g-3 align-items-center mb-2">
+                            <div class="col"><input id="pat_title" class="form-control input-ghost" placeholder="Title" /></div>
+                            <div class="col-3"><input id="pat_number" class="form-control input-ghost" placeholder="Number" /></div>
+                            <div class="col"><input id="pat_inventors" class="form-control input-ghost" placeholder="Inventors (comma-sep)" /></div>
+                            <div class="col-3"><input id="pat_filed" class="form-control input-ghost" placeholder="Filed (YYYY-MM)" /></div>
+                            <div class="col-2">
+                              <select id="pat_status" class="form-select input-ghost">
+                                <option value="Pending">Pending</option>
+                                <option value="Granted">Granted</option>
+                              </select>
+                            </div>
+                            <div class="col-auto"><button class="btn btn-primary" data-add="patents">Add</button></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Bottom row: Mentors & Colleagues + Partners -->
+                  <div class="row g-5">
+                    <div class="col-md-8">
+                      <div class="card h-100">
+                        <div class="card-header align-items-center">
+                          <h3 class="card-title fw-bold m-0">Mentors &amp; Colleagues</h3>
+                          <div class="card-toolbar">
+                            <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                    data-edit-target="#mentors_editor,#colleagues_editor">Edit</button>
+                          </div>
+                        </div>
+                        <div class="card-body">
+                          <div class="fw-semibold mb-1">Mentors</div>
+                          <ul id="mentors_list" class="ps-7 mb-3"></ul>
+                          <div id="mentors_editor" class="editor d-none">
+                            <div class="input-group mb-2">
+                              <input class="form-control input-ghost" placeholder="Add mentor…" id="mentors_input" />
+                              <button class="btn btn-primary" data-add="mentors">Add</button>
+                            </div>
+                          </div>
+                          <div class="fw-semibold mb-1">Colleagues</div>
+                          <ul id="colleagues_list" class="ps-7 mb-3"></ul>
+                          <div id="colleagues_editor" class="editor d-none">
+                            <div class="input-group mb-2">
+                              <input class="form-control input-ghost" placeholder="Add colleague…" id="colleagues_input" />
+                              <button class="btn btn-primary" data-add="colleagues">Add</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-md-4">
+                      <div class="card h-100">
+                        <div class="card-header align-items-center">
+                          <h3 class="card-title fw-bold m-0">Partners</h3>
+                          <div class="card-toolbar">
+                            <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                    data-edit-target="#partners_editor">Edit</button>
+                          </div>
+                        </div>
+                        <div class="card-body">
+                          <ul id="partners_view" class="ps-7 mb-3"></ul>
+                          <div id="partners_editor" class="editor d-none">
+                            <div class="row g-3 align-items-center mb-2">
+                              <div class="col"><input id="partner_key" class="form-control input-ghost" placeholder="Type (e.g., Academic)" /></div>
+                              <div class="col-4"><input id="partner_val" class="form-control input-ghost" placeholder="Count" /></div>
+                              <div class="col-auto"><button class="btn btn-primary" data-add="partners">Add</button></div>
+                            </div>
+                            <div id="partners_list"></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- RIGHT stack -->
+                <div class="col-xl-2">
+                  <div class="card mb-5">
+                    <div class="card-body d-flex align-items-center justify-content-between">
+                      <div class="d-flex align-items-center gap-2">
+                        <i class="ki-duotone ki-message-text-2 fs-3"></i>
+                        <i class="ki-duotone ki-notification-bing fs-3"></i>
+                        <span class="text-muted">—</span>
+                      </div>
+                      <div class="symbol symbol-40px">
+                        <img src="assets/media/avatars/blank.png" alt="">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card mb-5">
+                    <div class="card-header align-items-center">
+                      <h3 class="card-title fw-bold m-0">Positions</h3>
+                      <div class="card-toolbar">
+                        <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                data-edit-target="#positions_editor_right">Edit</button>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <ul id="positions_list" class="ps-7 mb-3"></ul>
+                      <div id="positions_editor_right" class="editor d-none">
+                        <div class="input-group">
+                          <input class="form-control input-ghost" placeholder="Add position…" id="positions_input" />
+                          <button class="btn btn-primary" data-add="positions">Add</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card mb-5">
+                    <div class="card-header align-items-center">
+                      <h3 class="card-title fw-bold m-0">Education</h3>
+                      <div class="card-toolbar">
+                        <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                data-edit-target="#education_editor">Edit</button>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <ul id="education_list" class="ps-7 mb-3"></ul>
+                      <div id="education_editor" class="editor d-none">
+                        <div class="input-group">
+                          <input class="form-control input-ghost" placeholder="Add degree…" id="education_input" />
+                          <button class="btn btn-primary" data-add="education">Add</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card mb-5">
+                    <div class="card-header align-items-center">
+                      <h3 class="card-title fw-bold m-0">Memberships</h3>
+                      <div class="card-toolbar">
+                        <button class="btn btn-sm btn-light box-edit-btn d-none"
+                                data-edit-target="#memberships_editor">Edit</button>
+                      </div>
+                    </div>
+                    <div class="card-body">
+                      <ul id="memberships_list" class="ps-7 mb-3"></ul>
+                      <div id="memberships_editor" class="editor d-none">
+                        <div class="input-group">
+                          <input class="form-control input-ghost" placeholder="Add membership…" id="memberships_input" />
+                          <button class="btn btn-primary" data-add="memberships">Add</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div><!-- /row -->
+            </div>
+          </div>
+          <!--end::Content-->
+        </div>
+        <!--end::Main-->
+      </div>
+      <!--end::Wrapper-->
+
+    </div>
+    <!--end::Page-->
+  </div>
+  <!--end::Root-->
+
+  <!-- Template JS -->
+  <script src="assets/plugins/global/plugins.bundle.js"></script>
+  <script src="assets/js/scripts.bundle.js"></script>
+  <script src="assets/plugins/custom/datatables/datatables.bundle.js"></script>
+  <script src="assets/js/widgets.bundle.js"></script>
+
+  <!-- Your page logic -->
+  <script src="assets/js/profile.js"></script>
+</body>
+</html>
