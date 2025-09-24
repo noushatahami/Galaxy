@@ -18,7 +18,8 @@
     }
   };
 
-  // helpers
+  // ---- globals/helpers ----
+  let editMode = false; // <— controls visibility of remove buttons & per-card Edit
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => Array.from(document.querySelectorAll(sel));
   const $on = (el, ev, fn) => el && el.addEventListener(ev, fn);
@@ -35,13 +36,17 @@
   }
   function saveProfile(){ localStorage.setItem("galaxy_profile", JSON.stringify(state.profile)); }
 
+  function updateRemoveButtonsVisibility() {
+    $$(".remove-btn").forEach(b => b.classList.toggle("d-none", !editMode));
+  }
+
   function renderList(selector, arr) {
     const ul = $(selector); if (!ul) return;
     ul.innerHTML = "";
     if (!arr?.length) { ul.innerHTML = `<li class="text-muted">—</li>`; return; }
     arr.forEach((item, i) => {
       const li = el("li");
-      li.innerHTML = `${item} <button class="btn btn-sm btn-light-danger ms-2" data-remove-list="${selector}" data-index="${i}">Remove</button>`;
+      li.innerHTML = `${item} <button class="btn btn-sm btn-light-danger ms-2 remove-btn" data-remove-list="${selector}" data-index="${i}">Remove</button>`;
       ul.appendChild(li);
     });
   }
@@ -49,7 +54,7 @@
   function render() {
     const p = state.profile;
 
-    // header
+    // header/avatar
     $("#profile_name_display").textContent = p.name || "—";
     const wrapper = $("#avatar_wrapper");
     if (wrapper) wrapper.style.backgroundImage = `url('${p.photo_url || "assets/media/avatars/300-1.jpg"}')`;
@@ -62,15 +67,13 @@
     renderList("#mentors_list", p.mentors);
     renderList("#colleagues_list", p.colleagues);
 
-    // social media
+    // social media (view + editor rows)
     const smView = $("#social_media_view");
     if (smView) {
       smView.innerHTML = "";
       const keys = Object.keys(p.social_media || {});
       if (!keys.length) smView.innerHTML = `<li class="text-muted">—</li>`;
-      keys.forEach(k => {
-        smView.appendChild(el("li", null, `<span class="fw-semibold">${k}:</span> ${p.social_media[k]}`));
-      });
+      keys.forEach(k => smView.appendChild(el("li", null, `<span class="fw-semibold">${k}:</span> ${p.social_media[k]}`)));
     }
     const smList = $("#social_media_list");
     if (smList) {
@@ -79,7 +82,7 @@
         smList.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
           <input class="form-control form-control-sm" value="${k}" data-k="k">
           <input class="form-control form-control-sm" value="${p.social_media[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger" data-remove="social_media" data-key="${k}">Remove</button>`));
+          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="social_media" data-key="${k}">Remove</button>`));
       });
     }
 
@@ -94,7 +97,7 @@
       if (!p.awards?.length) aw.innerHTML = `<li class="text-muted">—</li>`;
       (p.awards || []).forEach(a => {
         aw.appendChild(el("li", null, `<span class="fw-semibold">${a.year||""}</span> ${a.title||""}
-          <button class="btn btn-sm btn-light-danger ms-3" data-remove="awards" data-year="${a.year}" data-title="${a.title}">Remove</button>`));
+          <button class="btn btn-sm btn-light-danger ms-3 remove-btn" data-remove="awards" data-year="${a.year}" data-title="${a.title}">Remove</button>`));
       });
     }
 
@@ -111,7 +114,7 @@
           <div>Inventors: ${(pt.inventors||[]).join(", ")}</div>
           <div>Filed: ${pt.filed||""}</div>
           <div class="${color}">● ${pt.status||""}</div>
-          <button class="btn btn-sm btn-light-danger mt-1" data-remove="patents" data-index="${idx}">Remove</button>`));
+          <button class="btn btn-sm btn-light-danger mt-1 remove-btn" data-remove="patents" data-index="${idx}">Remove</button>`));
       });
     }
 
@@ -130,14 +133,17 @@
         plst.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
           <input class="form-control form-control-sm" value="${k}" data-k="k">
           <input class="form-control form-control-sm" value="${p.partners[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger" data-remove="partners" data-key="${k}">Remove</button>`));
+          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="partners" data-key="${k}">Remove</button>`));
       });
     }
+
+    // finally, sync remove buttons visibility with current mode
+    updateRemoveButtonsVisibility();
   }
 
   // editors / events
   function wireEditors() {
-    // adders (FIX: pass "click")
+    // adders
     const addList = (inputSel, key) => {
       const v = $(inputSel)?.value.trim(); if (!v) return;
       (state.profile[key] ||= []).push(v); $(inputSel).value=""; saveProfile(); render();
@@ -230,12 +236,12 @@
     });
 
     // global edit toggle
-    let editMode = false;
     const setEditMode = (on) => {
       editMode = on;
       const btn = $("#editToggle"); if (btn) btn.textContent = on ? "Done" : "Edit";
       $$(".box-edit-btn").forEach(b => b.classList.toggle("d-none", !on));
       if (!on) { $$(".editor").forEach(ed => ed.classList.add("d-none")); }
+      updateRemoveButtonsVisibility();
     };
     $on($("#editToggle"), "click", () => setEditMode(!editMode));
     setEditMode(false); // start off
