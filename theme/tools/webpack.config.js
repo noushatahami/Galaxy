@@ -190,21 +190,19 @@ function mainConfig() {
             }),
             new CopyWebpackPlugin({
                 patterns: [
-                    // copy dashboard (source of truth)
-                    { from: path.resolve(__dirname, "../src/index.html"),
-                    to:   path.resolve(__dirname, "../dist/index.html") },
+                    // copy your Galaxy pages
+                    { 
+                    from: path.resolve(__dirname, "../src/galaxy"), 
+                    to: path.resolve(__dirname, "../dist/galaxy") 
+                    },
 
-                    // copy all Galaxy pages
-                    { from: path.resolve(__dirname, "../src/galaxy"),
-                    to:   path.resolve(__dirname, "../dist/galaxy") },
-
-                    // (optional) if your build doesn't already emit custom JS to /assets/js/custom,
-                    // add a copy rule from src/js/custom → dist/assets/js/custom:
-                    { from: path.resolve(__dirname, "../src/js/custom"),
-                    to:   path.resolve(__dirname, "../dist/assets/js/custom") },
+                    // copy ALL custom JS (including galaxy/profile.js)
+                    { 
+                    from: path.resolve(__dirname, "../src/js/custom/galaxy"), 
+                    to: path.resolve(__dirname, "../dist/assets/js/custom/galaxy") 
+                    },
                 ],
-            }),
-
+                }),
         ].concat(extraPlugins),
         module: {
             rules: [
