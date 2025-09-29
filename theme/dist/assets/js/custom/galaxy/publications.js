@@ -1,275 +1,321 @@
-(function () {
-  const state = {
-    profile: {
-      name: "—",
-      photo_url: "assets/media/avatars/300-1.jpg",
-      social_media: {},
-      media_mentions: [],
-      research_areas: [],
-      awards: [],
-      patents: [],
-      mentors: [],
-      colleagues: [],
-      partners: {},
-      positions: [],
-      affiliations: [],
-      education: [],
-      memberships: []
-    }
-  };
+// theme/src/js/custom/galaxy/publications.js
+// Load data for the Publications page and render the four boxes:
+// - Publications (list)
+// - Metrics (totals, h-index, etc.)
+// - Top-Cited (top N by citations)
+// - Research Topics (tags)
 
-  // ---- globals/helpers ----
-  let editMode = false; // <— controls visibility of remove buttons & per-card Edit
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  const $on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const el = (tag, cls, html) => { const x=document.createElement(tag); if(cls)x.className=cls; if(html!=null)x.innerHTML=html; return x; };
-  const pill = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
+const API = (location.hostname === 'localhost')
+  ? 'http://127.0.0.1:3001/api'
+  : '/api';
 
-  async function loadProfile() {
-    const local = localStorage.getItem("galaxy_profile");
-    if (local) { state.profile = JSON.parse(local); return; }
-    try {
-      const res = await fetch("data/profile.json", { cache: "no-store" });
-      if (res.ok) state.profile = await res.json();
-    } catch (_) {}
+const state = {
+  publications: [],
+  metrics: null,
+  topCited: [],
+  topics: []
+};
+
+// ---------- utils ----------
+const $ = (sel) => document.querySelector(sel);
+function createEl(tag, opts = {}) {
+  const el = document.createElement(tag);
+  if (opts.class) el.className = opts.class;
+  if (opts.text != null) el.textContent = opts.text;
+  if (opts.html != null) el.innerHTML = opts.html;
+  if (opts.attrs) Object.entries(opts.attrs).forEach(([k, v]) => el.setAttribute(k, v));
+  return el;
+}
+const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+const by = (k, dir = 'desc') => (a, b) => {
+  const d = ((a?.[k] ?? 0) - (b?.[k] ?? 0));
+  return dir === 'asc' ? d : -d;
+};
+function uniq(arr) {
+  return [...new Set(arr)];
+}
+
+// h-index from citations array
+function computeHIndex(citationsArr) {
+  const sorted = [...citationsArr].sort((a, b) => b - a);
+  let h = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    if (sorted[i] >= i + 1) h = i + 1;
+    else break;
   }
-  function saveProfile(){ localStorage.setItem("galaxy_profile", JSON.stringify(state.profile)); }
+  return h;
+}
 
-  function updateRemoveButtonsVisibility() {
-    $$(".remove-btn").forEach(b => b.classList.toggle("d-none", !editMode));
+// client-side metrics fallback if API doesn’t provide
+function computeMetricsFromPublications(pubs) {
+  const cites = pubs.map(p => Number(p.citations || 0));
+  const totalPubs = pubs.length;
+  const totalCites = sum(cites);
+  const avgCites = totalPubs ? Math.round((totalCites / totalPubs) * 10) / 10 : 0;
+  const hIndex = computeHIndex(cites);
+  const i10 = pubs.filter(p => Number(p.citations || 0) >= 10).length;
+  return { totalPubs, totalCites, avgCites, hIndex, i10 };
+}
+
+// ---------- data loading ----------
+async function fetchJSON(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.json();
+}
+
+async function loadFromAPI() {
+  // Expect (but don’t require) these endpoints:
+  //   GET /api/publications            -> { publications: [...] }
+  //   GET /api/publications/metrics    -> { totalPubs, totalCites, avgCites, hIndex, i10 }
+  //   GET /api/publications/top-cited  -> [{...}]
+  //   GET /api/publications/topics     -> ["NLP","Vision",...]
+  const [pubsPayload, metricsPayload, topPayload, topicsPayload] = await Promise.allSettled([
+    fetchJSON(`${API}/publications`),
+    fetchJSON(`${API}/publications/metrics`),
+    fetchJSON(`${API}/publications/top-cited`),
+    fetchJSON(`${API}/publications/topics`)
+  ]);
+
+  const pubs = pubsPayload.status === 'fulfilled'
+    ? (pubsPayload.value.publications || pubsPayload.value || [])
+    : [];
+
+  const metrics = metricsPayload.status === 'fulfilled'
+    ? metricsPayload.value
+    : computeMetricsFromPublications(pubs);
+
+  const topCited = topPayload.status === 'fulfilled'
+    ? (topPayload.value.topCited || topPayload.value || [])
+    : [...pubs].sort(by('citations', 'desc')).slice(0, 5);
+
+  const topics = topicsPayload.status === 'fulfilled'
+    ? (topicsPayload.value.topics || topicsPayload.value || [])
+    : deriveTopics(pubs);
+
+  return { pubs, metrics, topCited, topics };
+}
+
+async function loadFromStatic() {
+  // Fallback JSON (put your seed data here if you want): theme/dist/data/publications.json
+  // The CopyWebpackPlugin can copy theme/src/data/publications.json -> theme/dist/data/publications.json
+  const data = await fetchJSON('data/publications.json').catch(() => ({}));
+
+  const pubs = data.publications || data || [];
+  const metrics = data.metrics || computeMetricsFromPublications(pubs);
+  const topCited = data.topCited || [...pubs].sort(by('citations', 'desc')).slice(0, 5);
+  const topics = data.topics || deriveTopics(pubs);
+
+  return { pubs, metrics, topCited, topics };
+}
+
+// derive topics quickly if none provided
+function deriveTopics(pubs) {
+  const all = pubs.flatMap(p => (p.tags || p.topics || []));
+  return uniq(all).slice(0, 12);
+}
+
+async function loadAll() {
+  // Try API → fallback to static
+  try {
+    const { pubs, metrics, topCited, topics } = await loadFromAPI();
+    state.publications = pubs;
+    state.metrics = metrics;
+    state.topCited = topCited;
+    state.topics = topics;
+    return;
+  } catch (e) {
+    console.warn('[publications] API failed, falling back to static', e);
+  }
+  try {
+    const { pubs, metrics, topCited, topics } = await loadFromStatic();
+    state.publications = pubs;
+    state.metrics = metrics;
+    state.topCited = topCited;
+    state.topics = topics;
+  } catch (e) {
+    console.error('[publications] No data available', e);
+  }
+}
+
+// ---------- renderers ----------
+function renderPublicationsList() {
+  const container = $('#publications_list');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!state.publications?.length) {
+    const empty = createEl('div', { class: 'text-gray-400', text: '—' });
+    container.appendChild(empty);
+    return;
   }
 
-  function renderList(selector, arr) {
-    const ul = $(selector); if (!ul) return;
-    ul.innerHTML = "";
-    if (!arr?.length) { ul.innerHTML = `<li class="text-muted">—</li>`; return; }
-    arr.forEach((item, i) => {
-      const li = el("li");
-      li.innerHTML = `${item} <button class="btn btn-sm btn-light-danger ms-2 remove-btn" data-remove-list="${selector}" data-index="${i}">Remove</button>`;
-      ul.appendChild(li);
-    });
-  }
+  state.publications.forEach((p, idx) => {
+    const wrap = createEl('div', { class: 'border-top border-gray-300 border-opacity-10 pt-4' });
 
-  function render() {
-    const p = state.profile;
-
-    // header/avatar
-    $("#profile_name_display").textContent = p.name || "—";
-    const wrapper = $("#avatar_wrapper");
-    if (wrapper) wrapper.style.backgroundImage = `url('${p.photo_url || "assets/media/avatars/300-1.jpg"}')`;
-
-    // lists
-    renderList("#positions_list", p.positions);
-    renderList("#affiliations_list", p.affiliations);
-    renderList("#education_list", p.education);
-    renderList("#memberships_list", p.memberships);
-    renderList("#mentors_list", p.mentors);
-    renderList("#colleagues_list", p.colleagues);
-
-    // social media (view + editor rows)
-    const smView = $("#social_media_view");
-    if (smView) {
-      smView.innerHTML = "";
-      const keys = Object.keys(p.social_media || {});
-      if (!keys.length) smView.innerHTML = `<li class="text-muted">—</li>`;
-      keys.forEach(k => smView.appendChild(el("li", null, `<span class="fw-semibold">${k}:</span> ${p.social_media[k]}`)));
-    }
-    const smList = $("#social_media_list");
-    if (smList) {
-      smList.innerHTML = "";
-      Object.keys(p.social_media || {}).forEach(k => {
-        smList.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.social_media[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="social_media" data-key="${k}">Remove</button>`));
+    const title = createEl('div', { class: 'fw-semibold' });
+    if (p.url || p.doi) {
+      const a = createEl('a', {
+        class: 'text-white text-hover-primary',
+        text: p.title || 'Untitled'
       });
+      a.href = p.url || (p.doi ? `https://doi.org/${p.doi}` : '#');
+      a.target = '_blank';
+      title.appendChild(a);
+    } else {
+      title.textContent = p.title || 'Untitled';
     }
 
-    // research areas (chips)
-    const rtags = $("#research_areas_tags");
-    if (rtags) rtags.innerHTML = (p.research_areas || []).map(pill).join("") || `<span class="text-muted">—</span>`;
+    const meta = createEl('div', { class: 'text-gray-400 fs-8 mt-1' });
+    const authors = Array.isArray(p.authors) ? p.authors.join(', ') : (p.authors || '—');
+    const venue = p.journal || p.venue || p.conference || '';
+    const year = p.year || '';
+    meta.textContent = [authors, venue, year].filter(Boolean).join(' • ');
 
-    // awards
-    const aw = $("#awards_list");
-    if (aw) {
-      aw.innerHTML = "";
-      if (!p.awards?.length) aw.innerHTML = `<li class="text-muted">—</li>`;
-      (p.awards || []).forEach(a => {
-        aw.appendChild(el("li", null, `<span class="fw-semibold">${a.year||""}</span> ${a.title||""}
-          <button class="btn btn-sm btn-light-danger ms-3 remove-btn" data-remove="awards" data-year="${a.year}" data-title="${a.title}">Remove</button>`));
-      });
-    }
+    const row = createEl('div', { class: 'd-flex align-items-center justify-content-between mt-2' });
 
-    // patents
-    const pl = $("#patents_list");
-    if (pl) {
-      pl.innerHTML = "";
-      if (!p.patents?.length) pl.innerHTML = `<li class="text-muted">—</li>`;
-      (p.patents || []).forEach((pt, idx) => {
-        const color = (pt.status||"").toLowerCase()==="pending" ? "text-warning" : "text-success";
-        pl.appendChild(el("li","mb-3",`
-          <div class="fw-semibold">${pt.title||""}</div>
-          <div>No: ${pt.number||""}</div>
-          <div>Inventors: ${(pt.inventors||[]).join(", ")}</div>
-          <div>Filed: ${pt.filed||""}</div>
-          <div class="${color}">● ${pt.status||""}</div>
-          <button class="btn btn-sm btn-light-danger mt-1 remove-btn" data-remove="patents" data-index="${idx}">Remove</button>`));
-      });
-    }
-
-    // partners
-    const pv = $("#partners_view");
-    if (pv) {
-      pv.innerHTML = "";
-      const pk = Object.keys(p.partners||{});
-      if (!pk.length) pv.innerHTML = `<li class="text-muted">—</li>`;
-      pk.forEach(k => pv.appendChild(el("li", null, `<span class="fw-semibold">${p.partners[k]}</span> ${k}`)));
-    }
-    const plst = $("#partners_list");
-    if (plst) {
-      plst.innerHTML = "";
-      Object.keys(p.partners||{}).forEach(k => {
-        plst.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.partners[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="partners" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // finally, sync remove buttons visibility with current mode
-    updateRemoveButtonsVisibility();
-  }
-
-  // editors / events
-  function wireEditors() {
-    // adders
-    const addList = (inputSel, key) => {
-      const v = $(inputSel)?.value.trim(); if (!v) return;
-      (state.profile[key] ||= []).push(v); $(inputSel).value=""; saveProfile(); render();
-    };
-    $on($("[data-add='positions']"), "click", () => addList("#positions_input","positions"));
-    $on($("[data-add='affiliations']"), "click", () => addList("#affiliations_input","affiliations"));
-    $on($("[data-add='media_mentions']"), "click", () => addList("#media_mentions_input","media_mentions"));
-    $on($("[data-add='mentors']"), "click", () => addList("#mentors_input","mentors"));
-    $on($("[data-add='colleagues']"), "click", () => addList("#colleagues_input","colleagues"));
-    $on($("[data-add='education']"), "click", () => addList("#education_input","education"));
-    $on($("[data-add='memberships']"), "click", () => addList("#memberships_input","memberships"));
-
-    $on($("[data-add='social_media']"), "click", () => {
-      const k=$("#sm_key")?.value.trim(), v=$("#sm_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.social_media ||= {})[k]=v; $("#sm_key").value=""; $("#sm_val").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='partners']"), "click", () => {
-      const k=$("#partner_key")?.value.trim(), v=$("#partner_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.partners ||= {})[k]=v; $("#partner_key").value=""; $("#partner_val").value="";
-      saveProfile(); render();
+    // left: tags
+    const tagsWrap = createEl('div', { class: 'd-flex flex-wrap gap-2' });
+    const tags = p.tags || p.topics || [];
+    tags.forEach(t => {
+      const b = createEl('span', { class: 'badge bg-secondary bg-opacity-25 text-gray-200', text: t });
+      tagsWrap.appendChild(b);
     });
 
-    $on($("[data-add='awards']"), "click", () => {
-      const year=$("#award_year")?.value.trim(), title=$("#award_title")?.value.trim(); if(!year||!title) return;
-      (state.profile.awards ||= []).push({year,title}); $("#award_year").value=""; $("#award_title").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='patents']"), "click", () => {
-      const title=$("#pat_title")?.value.trim(); if(!title) return;
-      const number=$("#pat_number")?.value.trim();
-      const inventors=($("#pat_inventors")?.value||"").split(",").map(s=>s.trim()).filter(Boolean);
-      const filed=$("#pat_filed")?.value.trim(); const status=$("#pat_status")?.value;
-      (state.profile.patents ||= []).push({title, number, inventors, filed, status});
-      ["#pat_title","#pat_number","#pat_inventors","#pat_filed"].forEach(s=>$(s).value="");
-      saveProfile(); render();
+    // right: citations (if available)
+    const cites = Number(p.citations || 0);
+    const citeBadge = createEl('span', {
+      class: 'badge badge-light-primary',
+      text: cites ? `${cites} citations` : '—'
     });
 
-    // generic removes
-    document.addEventListener("click", (e) => {
-      const t = e.target; if (!(t instanceof HTMLElement)) return;
+    row.appendChild(tagsWrap);
+    row.appendChild(citeBadge);
 
-      if (t.hasAttribute("data-remove-list")) {
-        const sel = t.getAttribute("data-remove-list");
-        const idx = +t.getAttribute("data-index");
-        const map = {
-          "#positions_list":"positions","#affiliations_list":"affiliations",
-          "#media_mentions_list":"media_mentions","#mentors_list":"mentors",
-          "#colleagues_list":"colleagues","#education_list":"education","#memberships_list":"memberships"
-        };
-        const key = map[sel]; if (!key) return;
-        state.profile[key].splice(idx,1); saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="social_media") {
-        delete state.profile.social_media[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="partners") {
-        delete state.profile.partners[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="awards") {
-        const y=t.getAttribute("data-year"), ti=t.getAttribute("data-title");
-        state.profile.awards = (state.profile.awards||[]).filter(a=>!(a.year===y && a.title===ti));
-        saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="patents") {
-        const idx = +t.getAttribute("data-index");
-        state.profile.patents.splice(idx,1); saveProfile(); render();
-      }
-    });
+    wrap.appendChild(title);
+    wrap.appendChild(meta);
+    wrap.appendChild(row);
 
-    // avatar preview
-    $on($("#photo_input"), "change", (e) => {
-      const f = e.target.files?.[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        state.profile.photo_url = r.result;
-        const wrap = $("#avatar_wrapper");
-        if (wrap) wrap.style.backgroundImage = `url('${state.profile.photo_url}')`;
-        saveProfile();
-      };
-      r.readAsDataURL(f);
-    });
-
-    // per-card edit buttons toggle editor visibility
-    $$(".box-edit-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const targets = (btn.getAttribute("data-edit-target") || "").split(",").map(s => s.trim()).filter(Boolean);
-        targets.forEach(sel => { const ed = $(sel); if (ed) ed.classList.toggle("d-none"); });
-      });
-    });
-
-    // global edit toggle
-    const setEditMode = (on) => {
-      editMode = on;
-      const btn = $("#editToggle"); if (btn) btn.textContent = on ? "Done" : "Edit";
-      $$(".box-edit-btn").forEach(b => b.classList.toggle("d-none", !on));
-      if (!on) { $$(".editor").forEach(ed => ed.classList.add("d-none")); }
-      updateRemoveButtonsVisibility();
-    };
-    $on($("#editToggle"), "click", () => setEditMode(!editMode));
-    setEditMode(false); // start off
-  }
-
-  // Tagify
-  function initTagify() {
-    const input = $("#research_areas_tagify");
-    if (!input || !window.Tagify) return;
-    const tagify = new Tagify(input, {
-      originalInputValueFormat: (values) => values.map(v => v.value).join(", ")
-    });
-    tagify.addTags(state.profile.research_areas || []);
-    const sync = () => {
-      state.profile.research_areas = tagify.value.map(t => t.value);
-      saveProfile();
-      const rtags = $("#research_areas_tags");
-      if (rtags) rtags.innerHTML =
-        (state.profile.research_areas || []).map(t => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`).join("")
-        || `<span class="text-muted">—</span>`;
-    };
-    tagify.on("add", sync); tagify.on("remove", sync); tagify.on("blur", sync);
-  }
-
-  document.addEventListener("DOMContentLoaded", async () => {
-    await loadProfile();
-    wireEditors();
-    initTagify();
-    render();
+    container.appendChild(wrap);
   });
-})();
+}
+
+function renderMetrics() {
+  const m = state.metrics || {};
+  const id = (x) => document.getElementById(x);
+
+  const mappings = [
+    ['m_totalPubs', m.totalPubs ?? 0],
+    ['m_totalCites', m.totalCites ?? 0],
+    ['m_avgCites', m.avgCites ?? 0],
+    ['m_hIndex', m.hIndex ?? 0],
+    ['m_i10Index', m.i10Index ?? 0]
+  ];
+
+  mappings.forEach(([key, val]) => {
+    const el = id(key);
+    if (el) el.textContent = String(val);
+  });
+}
+
+function renderTopCited() {
+  const ul = $('#top_cited_list');
+  if (!ul) return;
+
+  ul.innerHTML = '';
+  const items = state.topCited?.length ? state.topCited : [];
+
+  if (!items.length) {
+    ul.appendChild(createEl('li', { class: 'text-gray-400', text: '—' }));
+    return;
+  }
+
+  items.slice(0, 5).forEach(p => {
+    const li = createEl('li');
+    const a = createEl('a', {
+      class: 'text-white text-hover-primary',
+      text: p.title || 'Untitled'
+    });
+    a.href = p.url || (p.doi ? `https://doi.org/${p.doi}` : '#');
+    a.target = '_blank';
+
+    const meta = createEl('div', { class: 'text-gray-400 fs-8' });
+    const authors = Array.isArray(p.authors) ? p.authors.join(', ') : (p.authors || '');
+    const year = p.year || '';
+    meta.textContent = [authors, year].filter(Boolean).join(' • ');
+
+    const cites = createEl('span', {
+      class: 'badge badge-light-primary ms-2',
+      text: `${Number(p.citations || 0)} cites`
+    });
+
+    li.appendChild(a);
+    li.appendChild(cites);
+    li.appendChild(meta);
+    ul.appendChild(li);
+  });
+}
+
+function renderTopics() {
+  const wrap = $('#research_topics_tags');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  if (!state.topics?.length) {
+    wrap.appendChild(createEl('span', { class: 'badge badge-light text-gray-500', text: '—' }));
+    return;
+  }
+
+  state.topics.forEach(t => {
+    wrap.appendChild(createEl('span', { class: 'badge badge-light', text: t }));
+  });
+}
+
+function renderAll() {
+  renderPublicationsList();
+  renderMetrics();
+  renderTopCited();
+  renderTopics();
+}
+
+// ---------- optional: editor wiring (keep hidden by default) ----------
+function wireEditorAdd() {
+  const addBtn = document.getElementById('pub_add_btn');
+  if (!addBtn) return;
+
+  addBtn.addEventListener('click', () => {
+    const pub = {
+      title: $('#pub_title')?.value?.trim(),
+      authors: $('#pub_authors')?.value?.split(',').map(s => s.trim()).filter(Boolean) || [],
+      journal: $('#pub_journal')?.value?.trim(),
+      year: Number($('#pub_year')?.value?.trim() || 0) || undefined,
+      tags: $('#pub_tags')?.value?.split(',').map(s => s.trim()).filter(Boolean) || [],
+      doi: $('#pub_doi')?.value?.trim(),
+      url: $('#pub_pdf')?.value?.trim() || undefined, // treat as link for now
+      status: $('#pub_status')?.value?.trim() || undefined,
+      citations: Number($('#pub_citations')?.value?.trim() || 0) || 0
+    };
+
+    // naive validation
+    if (!pub.title) return;
+
+    state.publications.unshift(pub);
+    // recompute derived bits
+    state.metrics = computeMetricsFromPublications(state.publications);
+    state.topCited = [...state.publications].sort(by('citations', 'desc')).slice(0, 5);
+    state.topics = deriveTopics(state.publications);
+
+    renderAll();
+    // clear fields
+    ['pub_title','pub_authors','pub_journal','pub_year','pub_tags','pub_doi','pub_pdf','pub_status','pub_citations']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  });
+}
+
+// ---------- boot ----------
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAll();
+  renderAll();
+  wireEditorAdd();
+});

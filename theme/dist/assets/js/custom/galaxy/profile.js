@@ -26,14 +26,53 @@
   const el = (tag, cls, html) => { const x=document.createElement(tag); if(cls)x.className=cls; if(html!=null)x.innerHTML=html; return x; };
   const pill = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
 
+  const API = (location.hostname === 'localhost')
+  ? 'http://localhost:3001/api'
+  : '/api';
+
+  // Example: upload CV and enrich
+  async function parseCv(file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch(`${API}/ingest/cv`, { method: 'POST', body: fd });
+    if (!r.ok) throw new Error('CV parse failed');
+    return r.json();
+  }
+
+  async function enrichData(parsed, userContext) {
+    const r = await fetch(`${API}/enrich`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parsed, user_context: userContext })
+    });
+    if (!r.ok) throw new Error('Enrich failed');
+    return r.json();
+  }
+
   async function loadProfile() {
     const local = localStorage.getItem("galaxy_profile");
-    if (local) { state.profile = JSON.parse(local); return; }
+    if (local) { 
+      state.profile = JSON.parse(local); 
+      return; 
+    }
+    try {
+      // 👇 call the backend
+      const res = await fetch(`${API}/profile`, { cache: "no-store" });
+      if (res.ok) {
+        state.profile = await res.json();
+        return;
+      }
+    } catch (err) {
+      console.warn("Falling back to static JSON:", err);
+    }
+
+    // fallback: static JSON file
     try {
       const res = await fetch("data/profile.json", { cache: "no-store" });
       if (res.ok) state.profile = await res.json();
     } catch (_) {}
   }
+
   function saveProfile(){ localStorage.setItem("galaxy_profile", JSON.stringify(state.profile)); }
 
   function updateRemoveButtonsVisibility() {
