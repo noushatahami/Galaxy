@@ -458,10 +458,155 @@
 							<!--end::Toolbar-->
 							<!--begin::Content-->
 							<div id="kt_app_content" class="app-content flex-column-fluid">
-								<!--begin::Content container-->
-								<div id="kt_app_content_container" class="app-container container-fluid">
-									
-								<!--end::Content container-->
+							<!--begin::Content container-->
+							<div id="kt_app_content_container" class="app-container container-fluid">
+
+								<!-- 3D-ish card style (same as other pages) -->
+								<style>
+								.card-3d{
+									border:1px solid rgba(255,255,255,.08);
+									background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+									box-shadow:0 10px 20px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
+									border-radius:16px;
+									transition:transform .15s ease, box-shadow .15s ease;
+								}
+								.card-3d:hover{ transform:translateY(-3px); box-shadow:0 14px 26px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08); }
+								.card-3d .card-header{ border-bottom:1px solid rgba(255,255,255,.07); }
+								</style>
+
+								<div class="row g-6">
+								<!-- ================= MAIN (xl:8) ================= -->
+								<div class="col-xl-8">
+
+									<!-- Compliance Checkpoints -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Compliance Checkpoints</h3>
+									</div>
+									<div class="card-body">
+										<div id="checkpoints_list" class="vstack gap-3">
+										<!-- JS should inject items like:
+										<div class="rounded border border-white/10 p-3 bg-white/5">
+											<div class="d-flex align-items-center justify-content-between">
+											<div class="fw-semibold">Title <span class="ms-2">✅</span></div>
+											<button class="btn btn-sm btn-light">View Details</button>
+											</div>
+											<div class="text-gray-400 fs-8 mt-1">Last Reviewed: 2025-08-01</div>
+										</div>
+										-->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+									<!-- Recent Audits & Reviews -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Recent Audits &amp; Reviews</h3>
+									</div>
+									<div class="card-body">
+										<div id="audits_list" class="vstack gap-3">
+										<!-- JS should inject items like:
+										<div class="ps-3 border-start border-3 border-secondary">
+											<div class="fw-semibold">Audit Name</div>
+											<div class="text-gray-400 fs-8">Date: 2025-06-15 &nbsp;|&nbsp; Score: A</div>
+											<div class="text-gray-500 fs-8 mt-1">Tags: security, access</div>
+										</div>
+										-->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+									<!-- Compliance Notes -->
+									<div class="card card-3d">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Compliance Notes</h3>
+									</div>
+									<div class="card-body">
+										<div id="notes_list" class="vstack gap-2">
+										<!-- JS should inject <div class="text-gray-200">Note text…</div> -->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+								</div>
+
+								<!-- ================= RIGHT (xl:4) ================= -->
+								<div class="col-xl-4">
+
+									<!-- Compliance Summary -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Compliance Summary</h3>
+									</div>
+									<div class="card-body">
+										<div class="row text-center g-3">
+										<div class="col-4">
+											<div class="text-gray fs-8">Compliant</div>
+											<div class="fs-2 fw-bold" id="summary_compliant">0</div>
+										</div>
+										<div class="col-4">
+											<div class="text-gray fs-8">Pending</div>
+											<div class="fs-2 fw-bold" id="summary_pending">0</div>
+										</div>
+										<div class="col-4">
+											<div class="text-gray fs-8">Non-Compliant</div>
+											<div class="fs-2 fw-bold" id="summary_noncompliant">0</div>
+										</div>
+										</div>
+										<div class="w-100 d-flex justify-content-center mt-4">
+										<img src="assets/media/misc/donut.png" alt="Compliance Chart" class="h-100px w-100px opacity-90">
+										</div>
+									</div>
+									</div>
+
+									<!-- Quick Actions -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Quick Actions</h3>
+									</div>
+									<div class="card-body">
+										<div id="quick_actions_list" class="vstack gap-2">
+										<!-- JS should inject buttons like:
+										<button class="text-start px-3 py-2 rounded bg-white/10 border border-white/10 hover-bg-white" style="--hover-bg:white/15">
+											Upload latest SOC2 evidence
+										</button>
+										-->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+									<!-- Key Contacts -->
+									<div class="card card-3d">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Key Contacts</h3>
+									</div>
+									<div class="card-body">
+										<div id="key_contacts_list" class="vstack gap-3">
+										<!-- JS should inject items like:
+										<div class="d-flex align-items-center gap-3">
+											<div class="symbol symbol-40px">
+											<img class="rounded-circle" src="assets/media/avatars/300-1.jpg" alt="">
+											</div>
+											<div class="lh-sm">
+											<div class="fw-semibold">Jane Doe</div>
+											<div class="text-gray-400 fs-8">Compliance Officer</div>
+											</div>
+										</div>
+										-->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+								</div>
+								</div>
+
+							</div>
+							<!--end::Content container-->
 							</div>
 							<!--end::Content-->
 						</div>

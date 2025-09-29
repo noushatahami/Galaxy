@@ -458,10 +458,198 @@
 							<!--end::Toolbar-->
 							<!--begin::Content-->
 							<div id="kt_app_content" class="app-content flex-column-fluid">
-								<!--begin::Content container-->
-								<div id="kt_app_content_container" class="app-container container-fluid">
-									
-								<!--end::Content container-->
+							<!--begin::Content container-->
+							<div id="kt_app_content_container" class="app-container container-fluid">
+
+								<!-- same 3D look as other pages -->
+								<style>
+								.card-3d{
+									border:1px solid rgba(255,255,255,.08);
+									background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+									box-shadow:0 10px 20px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
+									border-radius:16px;
+									transition:transform .15s ease, box-shadow .15s ease;
+								}
+								.card-3d:hover{ transform:translateY(-3px); box-shadow:0 14px 26px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08); }
+								.card-3d .card-header{ border-bottom:1px solid rgba(255,255,255,.07); }
+								.pill{ display:inline-block; padding:.35rem .6rem; border-radius:999px; background:rgba(255,255,255,.08); }
+								</style>
+
+								<div class="row g-6">
+								<!-- ================= MAIN (xl:8) ================= -->
+								<div class="col-xl-8">
+									<!-- Stat tiles -->
+									<div class="row g-6 mb-6">
+									<div class="col-md-6">
+										<div class="card card-3d h-100">
+										<div class="card-header align-items-center">
+											<h3 class="card-title fw-bold m-0">Total Impact Points</h3>
+										</div>
+										<div class="card-body">
+											<div class="d-flex align-items-center justify-content-between">
+											<div class="fw-bold fs-2" id="impact_total">—</div>
+											</div>
+											<div class="text-gray-400 fs-7 mt-2">
+											<span class="text-success fw-semibold" id="impact_change"></span>
+											<span id="impact_note"></span>
+											</div>
+										</div>
+										</div>
+									</div>
+									<div class="col-md-6">
+										<div class="card card-3d h-100">
+										<div class="card-header align-items-center">
+											<h3 class="card-title fw-bold m-0">Total Budget</h3>
+										</div>
+										<div class="card-body">
+											<div class="d-flex align-items-center justify-content-between">
+											<div class="fw-bold fs-2" id="budget_amount">—</div>
+											</div>
+											<div class="text-gray-400 fs-7 mt-2">
+											<span class="text-success fw-semibold" id="budget_change"></span>
+											<span id="budget_note"></span>
+											</div>
+										</div>
+										</div>
+									</div>
+									</div>
+
+									<!-- Projects (legend + list) -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Projects</h3>
+									</div>
+									<div class="card-body">
+										<div class="text-gray fs-8 d-flex gap-4 mb-3">
+										<span><span class="me-1" style="color:#20E3B2">●</span>Active <span id="count_active">(0)</span></span>
+										<span><span class="me-1" style="color:#F5A623">●</span>On Hold <span id="count_on_hold">(0)</span></span>
+										<span><span class="me-1" style="color:#A0A0A0">●</span>Stopped <span id="count_stopped">(0)</span></span>
+										</div>
+
+										<div id="projects_list" class="row g-3">
+										<!-- JS will inject <div class="col-sm-6"><div class="px-3 py-2 rounded bg-body-secondary">● Label</div></div> -->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+									<!-- Project Snapshot -->
+									<div class="card card-3d">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Project Snapshot</h3>
+									</div>
+									<div class="card-body">
+										<div class="d-flex align-items-center justify-content-between text-gray-300 fs-8">
+										<span class="d-inline-flex align-items-center gap-2">
+											<span id="snapshot_status_dot" style="color:#20E3B2">●</span>
+											<span id="snapshot_status">—</span>
+										</span>
+										<span><span id="snapshot_days">0</span> Days</span>
+										</div>
+
+										<div class="mt-3 fs-5 fw-semibold" id="snapshot_title">—</div>
+										<div class="mt-2 text-gray-300" id="snapshot_desc">—</div>
+
+										<div class="mt-4 d-flex flex-wrap gap-2" id="snapshot_tags">
+										<span class="text-gray-400">—</span>
+										</div>
+
+										<div class="mt-4 d-flex align-items-center justify-content-between">
+										<div class="symbol-group symbol-hover">
+											<!-- example avatars; swap via JS as needed -->
+											<div class="symbol symbol-35px">
+											<img src="assets/media/avatars/blank.png" alt="">
+											</div>
+											<div class="symbol symbol-35px">
+											<img src="assets/media/avatars/300-1.jpg" alt="">
+											</div>
+											<div class="symbol symbol-35px">
+											<img src="assets/media/avatars/300-2.jpg" alt="">
+											</div>
+											<div class="symbol symbol-35px">
+											<img src="assets/media/avatars/300-5.jpg" alt="">
+											</div>
+										</div>
+
+										<!-- donut image w/ % overlay -->
+										<div class="position-relative" style="width:60px;height:60px">
+											<img src="assets/media/misc/donut.png" class="w-100 h-100" alt="">
+											<span class="position-absolute top-50 start-50 translate-middle fw-bold fs-8" id="snapshot_donut">—</span>
+										</div>
+										</div>
+									</div>
+									</div>
+								</div>
+
+								<!-- ================= RIGHT (xl:4) ================= -->
+								<div class="col-xl-4">
+									<!-- Latest Activity -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Latest Activity</h3>
+										<div class="card-toolbar">
+										<a href="#" class="btn btn-sm btn-light">See All</a>
+										</div>
+									</div>
+									<div class="card-body">
+										<div id="latest_activity_list" class="vstack gap-4">
+										<!-- JS template:
+										<div class="d-flex align-items-center justify-content-between">
+											<div class="d-flex align-items-center gap-3">
+											<div class="symbol symbol-35px"><img src="assets/media/avatars/300-1.jpg" alt=""></div>
+											<div>
+												<div class="fw-semibold">Name</div>
+												<div class="text-gray-300 fs-8">👥 Action ✅</div>
+											</div>
+											</div>
+											<span class="text-gray-500 fs-8">2h</span>
+										</div>
+										-->
+										<div class="text-gray-400">—</div>
+										</div>
+									</div>
+									</div>
+
+									<!-- Messages (first item emphasis) -->
+									<div class="card card-3d mb-6">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Messages</h3>
+										<div class="card-toolbar">
+										<a href="#" class="btn btn-sm btn-light">See All</a>
+										</div>
+									</div>
+									<div class="card-body">
+										<div id="messages_first">
+										<!-- JS fills with first message -->
+										<div class="text-gray-400">—</div>
+										</div>
+										<div class="mt-3">
+										<input type="text" class="form-control form-control-solid" placeholder="Reply Message">
+										</div>
+									</div>
+									</div>
+
+									<!-- Next Deadline -->
+									<div class="card card-3d">
+									<div class="card-header align-items-center">
+										<h3 class="card-title fw-bold m-0">Next Deadline</h3>
+									</div>
+									<div class="card-body">
+										<div class="d-flex align-items-center gap-3">
+										<img src="assets/media/svg/general/calendar.svg" alt="" class="h-25px">
+										<div class="fs-7">
+											<strong id="deadline_label">—</strong>
+											<span class="text-gray-400" id="deadline_date">—</span>
+										</div>
+										</div>
+									</div>
+									</div>
+								</div>
+								<!-- /RIGHT -->
+								</div>
+
+							</div>
+							<!--end::Content container-->
 							</div>
 							<!--end::Content-->
 						</div>
