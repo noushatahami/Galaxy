@@ -448,7 +448,7 @@
 										</div>
 										<!--end::Page title-->
 										<!--begin::Actions-->
-										<a href="#" class="btn btn-sm btn-success ms-3 px-4 py-3" data-bs-toggle="modal" data-bs-target="#kt_modal_create_app">Edit</a>
+										<button id="editToggle" class="btn btn-sm btn-light ms-3 px-4 py-3">Edit</button>
 										<!--end::Actions-->
 									</div>
 									<!--end::Toolbar wrapper-->
@@ -661,39 +661,18 @@
 		<!--end::Modals-->
 		<!--begin::Javascript-->
 		<script>var hostUrl = "assets/";</script>
-		<!--begin::Global Javascript Bundle(mandatory for all pages)-->
+
+		<!-- Global JS bundle -->
 		<script src="assets/plugins/global/plugins.bundle.js"></script>
 		<script src="assets/js/scripts.bundle.js"></script>
-		<!--end::Global Javascript Bundle-->
-		<!--begin::Vendors Javascript(used for this page only)-->
-		<script src="assets/plugins/custom/fullcalendar/fullcalendar.bundle.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/index.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/xy.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/percent.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/radar.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/map.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/geodata/worldLow.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/geodata/continentsLow.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/geodata/usaLow.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/geodata/worldTimeZonesLow.js"></script>
-		<script src="https://cdn.amcharts.com/lib/5/geodata/worldTimeZoneAreasLow.js"></script>
+
+		<!-- Vendors (if truly needed on this page) -->
 		<script src="assets/plugins/custom/datatables/datatables.bundle.js"></script>
-		<!--end::Vendors Javascript-->
-		<!--begin::Custom Javascript(used for this page only)-->
-		<script src="assets/js/widgets.bundle.js"></script>
-		<script src="assets/js/custom/widgets.js"></script>
-		<script src="assets/js/custom/apps/chat/chat.js"></script>
-		<script src="assets/js/custom/utilities/modals/upgrade-plan.js"></script>
-		<script src="assets/js/custom/utilities/modals/create-account.js"></script>
-		<script src="assets/js/custom/utilities/modals/create-app.js"></script>
-		<script src="assets/js/custom/utilities/modals/users-search.js"></script>
-		<!--end::Custom Javascript-->
+
+		<!-- Publications page logic -->
+		<script src="assets/js/custom/galaxy/grants.js" type="module"></script>
 		<!--end::Javascript-->
-	</body>
-	<!--begin::Page-specific Javascript-->
-	<script src="../assets/js/custom/galaxy/grants.js" type="module"></script>
-	<!--end::Page-specific Javascript-->
-	</body>
+		</body>
+		</html>
 	<!--end::Body-->
 </html>

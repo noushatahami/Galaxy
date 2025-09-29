@@ -1,265 +1,433 @@
 // theme/src/js/custom/galaxy/compliance.js
-// Renders: Compliance Checkpoints, Recent Audits & Reviews, Compliance Notes,
-//          Compliance Summary, Quick Actions, Key Contacts.
-// Tries your API first, falls back to static JSON.
-
-const API = (location.hostname === 'localhost')
-  ? 'http://127.0.0.1:3001/api'
-  : '/api';
-
-const state = {
-  checkpoints: [],     // [{id,title,status,lastReviewed,link}]
-  audits: [],          // [{id,name,date,score,tags:[]}]
-  notes: [],           // ["text", ...] or [{text, date}]
-  summary: { compliant:0, pending:0, noncompliant:0 },
-  quickActions: [],    // ["Upload SOC2 evidence", ...] or [{label, href}]
-  contacts: []         // [{name, role, avatar}]
-};
-
-/* ---------- utils ---------- */
-const $ = (s) => document.querySelector(s);
-function el(tag, opts = {}) {
-  const e = document.createElement(tag);
-  if (opts.class) e.className = opts.class;
-  if (opts.text != null) e.textContent = opts.text;
-  if (opts.html != null) e.innerHTML = opts.html;
-  if (opts.attrs) Object.entries(opts.attrs).forEach(([k,v]) => e.setAttribute(k, v));
-  return e;
-}
-async function fetchJSON(url, opts){
-  const r = await fetch(url, opts);
-  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
-  return r.json();
-}
-function fmtDate(d){
-  if (!d) return '—';
-  const dt = new Date(d);
-  return isNaN(dt) ? String(d) : dt.toLocaleDateString();
-}
-
-/* ---------- data loading ---------- */
-async function loadFromAPI(){
-  // Supported (but optional) endpoints:
-  // GET /api/compliance                    -> { checkpoints, audits, notes, summary, quickActions, contacts }
-  // GET /api/compliance/checkpoints        -> { items:[...] } or [...]
-  // GET /api/compliance/audits             -> { items:[...] } or [...]
-  // GET /api/compliance/notes              -> { items:[...] } or [...]
-  // GET /api/compliance/summary            -> { compliant, pending, noncompliant }
-  // GET /api/compliance/quick-actions      -> { items:[...] } or [...]
-  // GET /api/compliance/contacts           -> { items:[...] } or [...]
-  const [rootP, cpsP, audP, notesP, sumP, qaP, kcP] = await Promise.allSettled([
-    fetchJSON(`${API}/compliance`),
-    fetchJSON(`${API}/compliance/checkpoints`),
-    fetchJSON(`${API}/compliance/audits`),
-    fetchJSON(`${API}/compliance/notes`),
-    fetchJSON(`${API}/compliance/summary`),
-    fetchJSON(`${API}/compliance/quick-actions`),
-    fetchJSON(`${API}/compliance/contacts`)
-  ]);
-
-  const root = rootP.status === 'fulfilled' ? rootP.value : {};
-
-  // Prefer specific endpoints, else fall back to root payload fields, else empty
-  const checkpoints = cpsP.status==='fulfilled'
-    ? (cpsP.value.items || cpsP.value || [])
-    : (root.checkpoints || []);
-
-  const audits = audP.status==='fulfilled'
-    ? (audP.value.items || audP.value || [])
-    : (root.audits || []);
-
-  const notes = notesP.status==='fulfilled'
-    ? (notesP.value.items || notesP.value || [])
-    : (root.notes || []);
-
-  const summary = sumP.status==='fulfilled'
-    ? (sumP.value || {})
-    : (root.summary || {});
-
-  const quickActions = qaP.status==='fulfilled'
-    ? (qaP.value.items || qaP.value || [])
-    : (root.quickActions || []);
-
-  const contacts = kcP.status==='fulfilled'
-    ? (kcP.value.items || kcP.value || [])
-    : (root.contacts || []);
-
-  return { checkpoints, audits, notes, summary, quickActions, contacts };
-}
-
-async function loadFromStatic(){
-  // Seed file: theme/src/data/compliance.json → copied to theme/dist/data/compliance.json
-  const data = await fetchJSON('data/compliance.json').catch(()=> ({}));
-  return {
-    checkpoints: data.checkpoints || [],
-    audits: data.audits || [],
-    notes: data.notes || [],
-    summary: data.summary || { compliant:0, pending:0, noncompliant:0 },
-    quickActions: data.quickActions || [],
-    contacts: data.contacts || []
+(() => {
+  /* ----------------------- utils ----------------------- */
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const H  = (t, c='', html='') => { const n=document.createElement(t); if(c)n.className=c; if(html!=null)n.innerHTML=html; return n; };
+  const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+  const API = (location.hostname === 'localhost') ? 'http://127.0.0.1:3001/api' : '/api';
+  const fmtDate = (d) => {
+    if (!d) return '—';
+    const dt = new Date(d); return isNaN(dt) ? String(d) : dt.toLocaleDateString();
   };
-}
 
-async function loadAll(){
-  try {
-    Object.assign(state, await loadFromAPI());
-    return;
-  } catch (e){
-    console.warn('[compliance] API failed, using static:', e);
-  }
-  try {
-    Object.assign(state, await loadFromStatic());
-  } catch (e){
-    console.error('[compliance] No data available:', e);
-  }
-}
+  /* ----------------------- state ----------------------- */
+  let editMode = false;
+  const state = {
+    checkpoints: [],     // [{id,title,status,lastReviewed,link}]
+    audits: [],          // [{id,name,date,score,tags:[]}]
+    notes: [],           // ["text", ...] or [{text, date}]
+    summary: { compliant:0, pending:0, noncompliant:0 },
+    quickActions: [],    // ["Upload SOC2 evidence", ...] or [{label, href}]
+    contacts: []         // [{name, role, avatar}]
+  };
 
-/* ---------- renderers ---------- */
-function renderCheckpoints(){
-  const wrap = $('#checkpoints_list');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-
-  if (!state.checkpoints?.length){
-    wrap.appendChild(el('div', { class:'text-gray-400', text:'—' }));
-    return;
-  }
-
-  state.checkpoints.forEach(cp=>{
-    const box = el('div', { class:'rounded border border-white/10 p-3 bg-white/5' });
-    const row = el('div', { class:'d-flex align-items-center justify-content-between' });
-
-    const left = el('div', { class:'fw-semibold' });
-    left.innerHTML = `${cp.title || '—'} ${cp.status ? `<span class="ms-2">${cp.status === 'pass' || cp.status === 'compliant' ? '✅' : '⏳'}</span>` : ''}`;
-
-    const btn = el('a', {
-      class:'btn btn-sm btn-light',
-      text:'View Details',
-      attrs: { href: cp.link || '#', target: cp.link ? '_blank' : '_self' }
-    });
-
-    row.appendChild(left);
-    row.appendChild(btn);
-    box.appendChild(row);
-    box.appendChild(el('div', { class:'text-gray-400 fs-8 mt-1', text:`Last Reviewed: ${fmtDate(cp.lastReviewed)}` }));
-    wrap.appendChild(box);
-  });
-}
-
-function renderAudits(){
-  const wrap = $('#audits_list');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-
-  if (!state.audits?.length){
-    wrap.appendChild(el('div', { class:'text-gray-400', text:'—' }));
-    return;
-  }
-
-  state.audits.forEach(a=>{
-    const box = el('div', { class:'ps-3 border-start border-3 border-secondary' });
-    box.appendChild(el('div', { class:'fw-semibold', text: a.name || 'Audit' }));
-    box.appendChild(el('div', {
-      class:'text-gray-400 fs-8',
-      text: `Date: ${fmtDate(a.date)}  |  Score: ${a.score ?? '—'}`
-    }));
-    const tags = Array.isArray(a.tags) ? a.tags : [];
-    if (tags.length){
-      const t = el('div', { class:'text-gray-500 fs-8 mt-1' });
-      t.textContent = `Tags: ${tags.join(', ')}`;
-      box.appendChild(t);
+  /* ----------------------- persistence ----------------------- */
+  function save(){ localStorage.setItem('galaxy_compliance', JSON.stringify(state)); }
+  async function load(){
+    // local first
+    const local = localStorage.getItem('galaxy_compliance');
+    if (local) {
+      try { Object.assign(state, JSON.parse(local)); return; } catch {}
     }
-    wrap.appendChild(box);
-  });
-}
-
-function renderNotes(){
-  const wrap = $('#notes_list');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-
-  if (!state.notes?.length){
-    wrap.appendChild(el('div', { class:'text-gray-400', text:'—' }));
-    return;
+    // API fallback
+    try {
+      const [rootP, cpsP, audP, notesP, sumP, qaP, kcP] = await Promise.allSettled([
+        fetch(`${API}/compliance`),
+        fetch(`${API}/compliance/checkpoints`),
+        fetch(`${API}/compliance/audits`),
+        fetch(`${API}/compliance/notes`),
+        fetch(`${API}/compliance/summary`),
+        fetch(`${API}/compliance/quick-actions`),
+        fetch(`${API}/compliance/contacts`)
+      ]);
+      const root = (rootP.status==='fulfilled' && rootP.value.ok) ? await rootP.value.json() : {};
+      async function readOK(p){ return (p.status==='fulfilled' && p.value.ok) ? p.value.json() : null; }
+      const cps = await readOK(cpsP), aud = await readOK(audP), nts = await readOK(notesP), sum = await readOK(sumP), qa = await readOK(qaP), kc = await readOK(kcP);
+      state.checkpoints = cps?.items || cps || root.checkpoints || [];
+      state.audits      = aud?.items || aud || root.audits || [];
+      state.notes       = nts?.items || nts || root.notes || [];
+      state.summary     = sum || root.summary || { compliant:0, pending:0, noncompliant:0 };
+      state.quickActions= qa?.items  || qa  || root.quickActions || [];
+      state.contacts    = kc?.items  || kc  || root.contacts || [];
+      return;
+    } catch {}
+    // static last
+    try {
+      const r = await fetch('data/compliance.json', { cache:'no-store' });
+      if (r.ok) {
+        const d = await r.json();
+        state.checkpoints = d.checkpoints || [];
+        state.audits      = d.audits || [];
+        state.notes       = d.notes || [];
+        state.summary     = d.summary || { compliant:0, pending:0, noncompliant:0 };
+        state.quickActions= d.quickActions || [];
+        state.contacts    = d.contacts || [];
+      }
+    } catch {}
   }
 
-  state.notes.forEach(n=>{
-    const text = typeof n === 'string' ? n : (n.text || '—');
-    const row = el('div', { class:'text-gray-200' });
-    row.textContent = text;
-    wrap.appendChild(row);
-  });
-}
-
-function renderSummary(){
-  const s = state.summary || {};
-  const c = document.getElementById('summary_compliant');
-  const p = document.getElementById('summary_pending');
-  const n = document.getElementById('summary_noncompliant');
-  if (c) c.textContent = String(s.compliant ?? 0);
-  if (p) p.textContent = String(s.pending ?? 0);
-  if (n) n.textContent = String(s.noncompliant ?? 0);
-}
-
-function renderQuickActions(){
-  const wrap = $('#quick_actions_list');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-
-  if (!state.quickActions?.length){
-    wrap.appendChild(el('div', { class:'text-gray-400', text:'—' }));
-    return;
-  }
-
-  state.quickActions.forEach(a=>{
-    const label = typeof a === 'string' ? a : (a.label || 'Action');
-    const href  = typeof a === 'object' ? a.href : null;
-    const btn = el(href ? 'a' : 'button', {
-      class: 'text-start px-3 py-2 rounded bg-white/10 border border-white/10',
-      text: label,
-      attrs: href ? { href, target: '_blank' } : {}
+  /* ----------------------- renderers ----------------------- */
+  function renderCheckpoints(){
+    const wrap = $('#checkpoints_list'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.checkpoints?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    state.checkpoints.forEach(cp=>{
+      const box = H('div','rounded border border-white/10 p-3 bg-white/5','');
+      const row = H('div','d-flex align-items-center justify-content-between','');
+      const statusIcon = cp.status === 'pass' || cp.status === 'compliant' ? '✅' : (cp.status ? '⏳' : '');
+      row.appendChild(H('div','fw-semibold', `${cp.title || '—'} ${statusIcon ? `<span class="ms-2">${statusIcon}</span>` : ''}`));
+      const btn = cp.link
+        ? H('a','btn btn-sm btn-light','View Details')
+        : H('button','btn btn-sm btn-light','View Details');
+      if (cp.link) btn.href = cp.link, btn.target = '_blank';
+      row.appendChild(btn);
+      box.appendChild(row);
+      box.appendChild(H('div','text-gray-400 fs-8 mt-1', `Last Reviewed: ${fmtDate(cp.lastReviewed)}`));
+      wrap.appendChild(box);
     });
-    wrap.appendChild(btn);
-  });
-}
-
-function renderContacts(){
-  const wrap = $('#key_contacts_list');
-  if (!wrap) return;
-  wrap.innerHTML = '';
-
-  if (!state.contacts?.length){
-    wrap.appendChild(el('div', { class:'text-gray-400', text:'—' }));
-    return;
   }
 
-  state.contacts.forEach(c=>{
-    const row = el('div', { class:'d-flex align-items-center gap-3' });
-    const sym = el('div', { class:'symbol symbol-40px' });
-    const img = el('img', { attrs:{ src: c.avatar || 'assets/media/avatars/blank.png', alt:'', class:'rounded-circle' } });
-    sym.appendChild(img);
+  function renderAudits(){
+    const wrap = $('#audits_list'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.audits?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    state.audits.forEach(a=>{
+      const box = H('div','ps-3 border-start border-3 border-secondary','');
+      box.appendChild(H('div','fw-semibold', a.name || 'Audit'));
+      box.appendChild(H('div','text-gray-400 fs-8', `Date: ${fmtDate(a.date)}  |  Score: ${a.score ?? '—'}`));
+      const tags = Array.isArray(a.tags) ? a.tags : [];
+      if (tags.length){
+        const t = H('div','mt-2','');
+        tags.forEach(tag => t.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', tag)));
+        box.appendChild(t);
+      }
+      wrap.appendChild(box);
+    });
+  }
 
-    const meta = el('div', { class:'lh-sm' });
-    meta.appendChild(el('div', { class:'fw-semibold', text: c.name || '—' }));
-    meta.appendChild(el('div', { class:'text-gray-400 fs-8', text: c.role || '—' }));
+  function renderNotes(){
+    const wrap = $('#notes_list'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.notes?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    state.notes.forEach(n=>{
+      const text = typeof n === 'string' ? n : (n.text || '—');
+      wrap.appendChild(H('div','text-gray-200', text));
+    });
+  }
 
-    row.appendChild(sym);
-    row.appendChild(meta);
-    wrap.appendChild(row);
+  function renderSummary(){
+    const s = state.summary || {};
+    const c = $('#summary_compliant'), p = $('#summary_pending'), n = $('#summary_noncompliant');
+    if (c) c.textContent = String(s.compliant ?? 0);
+    if (p) p.textContent = String(s.pending ?? 0);
+    if (n) n.textContent = String(s.noncompliant ?? 0);
+  }
+
+  function renderQuickActions(){
+    const wrap = $('#quick_actions_list'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.quickActions?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    state.quickActions.forEach(a=>{
+      const label = typeof a === 'string' ? a : (a.label || 'Action');
+      const href  = typeof a === 'object' ? a.href : null;
+      const btn = href
+        ? H('a','text-start px-3 py-2 rounded bg-white/10 border border-white/10 d-block', label)
+        : H('button','text-start px-3 py-2 rounded bg-white/10 border border-white/10', label);
+      if (href) btn.href = href, btn.target = '_blank';
+      wrap.appendChild(btn);
+    });
+  }
+
+  function renderContacts(){
+    const wrap = $('#key_contacts_list'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.contacts?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    state.contacts.forEach(c=>{
+      const row = H('div','d-flex align-items-center gap-3','');
+      const sym = H('div','symbol symbol-40px','');
+      sym.appendChild(H('img','rounded-circle','')).src = c.avatar || 'assets/media/avatars/blank.png';
+      const meta = H('div','lh-sm','');
+      meta.appendChild(H('div','fw-semibold', c.name || '—'));
+      meta.appendChild(H('div','text-gray-400 fs-8', c.role || '—'));
+      row.appendChild(sym); row.appendChild(meta);
+      wrap.appendChild(row);
+    });
+  }
+
+  function renderAll(){
+    renderCheckpoints();
+    renderAudits();
+    renderNotes();
+    renderSummary();
+    renderQuickActions();
+    renderContacts();
+    reflectEditMode();
+  }
+
+  /* ----------------------- edit-mode shell ----------------------- */
+  function reflectEditMode(){
+    const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
+    $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
+  }
+  function wireEditToggle(){
+    on($('#editToggle'), 'click', (e)=>{
+      e.preventDefault();
+      editMode = !editMode;
+      reflectEditMode();
+    });
+  }
+  function ensureTinyButtons(){
+    const cfgs = [
+      { anchor:'#checkpoints_list',   title:'Edit Compliance Checkpoints', build: buildCheckpointsModal },
+      { anchor:'#audits_list',        title:'Edit Recent Audits & Reviews', build: buildAuditsModal },
+      { anchor:'#notes_list',         title:'Edit Compliance Notes',       build: buildNotesModal },
+      { anchor:'#summary_compliant',  title:'Edit Compliance Summary',     build: buildSummaryModal },
+      { anchor:'#quick_actions_list', title:'Edit Quick Actions',          build: buildQuickActionsModal },
+      { anchor:'#key_contacts_list',  title:'Edit Key Contacts',           build: buildContactsModal },
+    ];
+    cfgs.forEach(cfg=>{
+      const el = document.querySelector(cfg.anchor);
+      const card = el?.closest('.card');
+      const header = card?.querySelector('.card-header');
+      if (!header) return;
+      header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
+      let rail = header.querySelector('.card-toolbar'); if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
+      const btn = H('button','btn btn-sm btn-light box-edit-btn d-none','Edit');
+      btn.addEventListener('click', ()=> openModal(cfg.title, ...cfg.build()));
+      rail.appendChild(btn);
+    });
+  }
+
+  /* ----------------------- shared modal ----------------------- */
+  let bsModal;
+  function ensureModal(){
+    if ($('#compliance_modal')) return;
+    const shell = H('div','modal fade','');
+    shell.id = 'compliance_modal'; shell.tabIndex = -1;
+    shell.innerHTML = `
+      <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 class="modal-title">Edit</h3>
+            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal">
+              <i class="ki-duotone ki-cross fs-2"></i>
+            </button>
+          </div>
+          <div class="modal-body"><div id="compliance_modal_body"></div></div>
+          <div class="modal-footer">
+            <button id="compliance_modal_save" class="btn btn-primary">Save</button>
+            <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(shell);
+    bsModal = new bootstrap.Modal(shell);
+  }
+  function openModal(title, bodyNode, onSave){
+    ensureModal();
+    $('#compliance_modal .modal-title').textContent = title;
+    const body = $('#compliance_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+    const old = $('#compliance_modal_save');
+    const neo = old.cloneNode(true);
+    old.parentNode.replaceChild(neo, old);
+    neo.addEventListener('click', async ()=>{
+      await onSave();
+      save();
+      renderAll();
+      bsModal.hide();
+    });
+    bsModal.show();
+  }
+  function section(title){
+    const wrap = H('div','mb-6','');
+    wrap.appendChild(H('div','fw-bold fs-5 mb-3', title));
+    const box = H('div','p-4 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+    wrap.appendChild(box);
+    return {wrap, box};
+  }
+
+  /* ----------------------- modal builders ----------------------- */
+  function buildCheckpointsModal(){
+    const {wrap, box} = section('Compliance Checkpoints');
+    const list = H('div','d-flex flex-column gap-2','');
+
+    const row = (cp={})=>{
+      const r = H('div','row g-2 align-items-center','');
+      r.innerHTML = `
+        <div class="col-lg-4"><input class="form-control" placeholder="Title" value="${cp.title||''}"></div>
+        <div class="col-lg-2">
+          <select class="form-select">
+            <option value="" ${!cp.status?'selected':''}>—</option>
+            <option value="compliant" ${cp.status==='compliant'?'selected':''}>Compliant</option>
+            <option value="pass" ${cp.status==='pass'?'selected':''}>Pass</option>
+            <option value="pending" ${cp.status==='pending'?'selected':''}>Pending</option>
+          </select>
+        </div>
+        <div class="col-lg-2"><input type="date" class="form-control" value="${cp.lastReviewed ? new Date(cp.lastReviewed).toISOString().slice(0,10) : ''}"></div>
+        <div class="col-lg-3"><input class="form-control" placeholder="Link (optional)" value="${cp.link||''}"></div>
+        <div class="col-lg-1 d-grid"><button class="btn btn-light-danger">X</button></div>`;
+      on(r.querySelector('.btn-light-danger'),'click',()=>r.remove());
+      return r;
+    };
+
+    (state.checkpoints||[]).forEach(cp=>list.appendChild(row(cp)));
+    const add = H('button','btn btn-light mt-2','+ Add checkpoint'); on(add,'click',()=>list.appendChild(row({})));
+    box.appendChild(list); box.appendChild(add);
+
+    const onSave = ()=>{
+      const items = [];
+      list.querySelectorAll(':scope > .row').forEach(r=>{
+        const [titleEl, statusEl, dateEl, linkEl] = r.querySelectorAll('input, select');
+        const title = titleEl.value.trim();
+        const status = statusEl.value || undefined;
+        const lastReviewed = dateEl.value || undefined;
+        const link = linkEl.value.trim() || undefined;
+        if (title) items.push({ title, status, lastReviewed, link });
+      });
+      state.checkpoints = items;
+    };
+    return [wrap, onSave];
+  }
+
+  function buildAuditsModal(){
+    const {wrap, box} = section('Recent Audits & Reviews');
+    const list = H('div','d-flex flex-column gap-2','');
+
+    const row = (a={})=>{
+      const r = H('div','row g-2 align-items-center','');
+      r.innerHTML = `
+        <div class="col-md-4"><input class="form-control" placeholder="Name" value="${a.name||''}"></div>
+        <div class="col-md-3"><input type="date" class="form-control" value="${a.date ? new Date(a.date).toISOString().slice(0,10) : ''}"></div>
+        <div class="col-md-2"><input class="form-control" placeholder="Score" value="${a.score ?? ''}"></div>
+        <div class="col-md-2"><input class="form-control" placeholder="Tags (comma)" value="${(a.tags||[]).join(', ')}"></div>
+        <div class="col-md-1 d-grid"><button class="btn btn-light-danger">X</button></div>`;
+      on(r.querySelector('.btn-light-danger'),'click',()=>r.remove());
+      return r;
+    };
+
+    (state.audits||[]).forEach(a=>list.appendChild(row(a)));
+    const add = H('button','btn btn-light mt-2','+ Add audit'); on(add,'click',()=>list.appendChild(row({})));
+    box.appendChild(list); box.appendChild(add);
+
+    const onSave = ()=>{
+      const items = [];
+      list.querySelectorAll(':scope > .row').forEach(r=>{
+        const [nameEl, dateEl, scoreEl, tagsEl] = r.querySelectorAll('input');
+        const name  = nameEl.value.trim();
+        const date  = dateEl.value || '';
+        const score = scoreEl.value.trim();
+        const tags  = tagsEl.value.split(',').map(s=>s.trim()).filter(Boolean);
+        if (name) items.push({ name, date, score, tags });
+      });
+      state.audits = items;
+    };
+    return [wrap, onSave];
+  }
+
+  function buildNotesModal(){
+    const {wrap, box} = section('Compliance Notes (one per line)');
+    const ta = H('textarea','form-control', (state.notes||[]).map(n => typeof n==='string' ? n : (n.text||'')).join('\n'));
+    ta.rows = 10;
+    box.appendChild(ta);
+    const onSave = ()=>{
+      const lines = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+      state.notes = lines;
+    };
+    return [wrap, onSave];
+  }
+
+  function buildSummaryModal(){
+    const {wrap, box} = section('Compliance Summary');
+    const s = state.summary || {};
+    box.innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label">Compliant</label><input id="sum_c" class="form-control" value="${s.compliant ?? 0}"></div>
+        <div class="col-md-4"><label class="form-label">Pending</label><input id="sum_p" class="form-control" value="${s.pending ?? 0}"></div>
+        <div class="col-md-4"><label class="form-label">Non-Compliant</label><input id="sum_n" class="form-control" value="${s.noncompliant ?? 0}"></div>
+      </div>`;
+    const onSave = ()=>{
+      state.summary = {
+        compliant: Number($('#sum_c').value||0)||0,
+        pending: Number($('#sum_p').value||0)||0,
+        noncompliant: Number($('#sum_n').value||0)||0
+      };
+    };
+    return [wrap, onSave];
+  }
+
+  function buildQuickActionsModal(){
+    const {wrap, box} = section('Quick Actions');
+    const list = H('div','d-flex flex-column gap-2','');
+
+    const row = (label='', href='')=>{
+      const r = H('div','row g-2 align-items-center','');
+      r.innerHTML = `
+        <div class="col-md-7"><input class="form-control" placeholder="Label" value="${label}"></div>
+        <div class="col-md-4"><input class="form-control" placeholder="Link (optional)" value="${href}"></div>
+        <div class="col-md-1 d-grid"><button class="btn btn-light-danger">X</button></div>`;
+      on(r.querySelector('button'),'click',()=>r.remove());
+      return r;
+    };
+
+    (state.quickActions||[]).forEach(a=>{
+      if (typeof a === 'string') list.appendChild(row(a, ''));
+      else list.appendChild(row(a.label||'', a.href||''));
+    });
+    const add = H('button','btn btn-light mt-2','+ Add action'); on(add,'click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+
+    const onSave = ()=>{
+      const items = [];
+      list.querySelectorAll(':scope > .row').forEach(r=>{
+        const [labelEl, hrefEl] = r.querySelectorAll('input');
+        const label = labelEl.value.trim();
+        const href  = hrefEl.value.trim();
+        if (label) items.push(href ? { label, href } : label);
+      });
+      state.quickActions = items;
+    };
+    return [wrap, onSave];
+  }
+
+  function buildContactsModal(){
+    const {wrap, box} = section('Key Contacts');
+    const list = H('div','d-flex flex-column gap-2','');
+
+    const row = (c={})=>{
+      const r = H('div','row g-2 align-items-center','');
+      r.innerHTML = `
+        <div class="col-md-4"><input class="form-control" placeholder="Name" value="${c.name||''}"></div>
+        <div class="col-md-4"><input class="form-control" placeholder="Role" value="${c.role||''}"></div>
+        <div class="col-md-3"><input class="form-control" placeholder="Avatar URL" value="${c.avatar||''}"></div>
+        <div class="col-md-1 d-grid"><button class="btn btn-light-danger">X</button></div>`;
+      on(r.querySelector('button'),'click',()=>r.remove());
+      return r;
+    };
+
+    (state.contacts||[]).forEach(c=>list.appendChild(row(c)));
+    const add = H('button','btn btn-light mt-2','+ Add contact'); on(add,'click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+
+    const onSave = ()=>{
+      const items = [];
+      list.querySelectorAll(':scope > .row').forEach(r=>{
+        const [nameEl, roleEl, avatarEl] = r.querySelectorAll('input');
+        const name   = nameEl.value.trim();
+        const role   = roleEl.value.trim();
+        const avatar = avatarEl.value.trim();
+        if (name) items.push({ name, role, avatar });
+      });
+      state.contacts = items;
+    };
+    return [wrap, onSave];
+  }
+
+  /* ----------------------- boot ----------------------- */
+  document.addEventListener('DOMContentLoaded', async () => {
+    await load();
+    ensureTinyButtons();
+    wireEditToggle();
+    renderAll();
   });
-}
-
-function renderAll(){
-  renderCheckpoints();
-  renderAudits();
-  renderNotes();
-  renderSummary();
-  renderQuickActions();
-  renderContacts();
-}
-
-/* ---------- boot ---------- */
-document.addEventListener('DOMContentLoaded', async () => {
-  await loadAll();
-  renderAll();
-});
+})();

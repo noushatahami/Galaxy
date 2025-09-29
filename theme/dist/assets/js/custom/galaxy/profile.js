@@ -1,314 +1,437 @@
-(function () {
+// theme/src/js/custom/galaxy/profile.js
+// ONE tiny edit button per card. The "Research Area" card edits Research Areas + Awards + Patents in ONE modal.
+
+(() => {
+  /* ---------------- helpers ---------------- */
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const H  = (t, c='', inner='') => { const n=document.createElement(t); if(c)n.className=c; if(inner!=null)n.innerHTML=inner; return n; };
+  const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+
+  let editMode = false;
+
+  /* ---------------- state & persistence ---------------- */
   const state = {
     profile: {
-      name: "—",
-      photo_url: "assets/media/avatars/300-1.jpg",
-      social_media: {},
-      media_mentions: [],
-      research_areas: [],
-      awards: [],
-      patents: [],
-      mentors: [],
-      colleagues: [],
-      partners: {},
-      positions: [],
-      affiliations: [],
-      education: [],
-      memberships: []
+      name: '—',
+      photo_url: 'assets/media/avatars/300-1.jpg',
+      social_media: {},             // { Platform: url/handle }
+      media_mentions: [],           // [string]
+      research_areas: [],           // [string]
+      awards: [],                   // [{year,title}]
+      patents: [],                  // [{title,number,inventors[],filed,status}]
+      mentors: [],                  // [string]
+      colleagues: [],               // [string]
+      partners: [],                 // [{type,count}]
+      positions: [],                // [string]
+      education: [],                // [string]
+      memberships: []               // [string]
     }
   };
 
-  // ---- globals/helpers ----
-  let editMode = false; // <— controls visibility of remove buttons & per-card Edit
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  const $on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const el = (tag, cls, html) => { const x=document.createElement(tag); if(cls)x.className=cls; if(html!=null)x.innerHTML=html; return x; };
-  const pill = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
-
-  const API = (location.hostname === 'localhost')
-  ? 'http://localhost:3001/api'
-  : '/api';
-
-  // Example: upload CV and enrich
-  async function parseCv(file) {
-    const fd = new FormData();
-    fd.append('file', file);
-    const r = await fetch(`${API}/ingest/cv`, { method: 'POST', body: fd });
-    if (!r.ok) throw new Error('CV parse failed');
-    return r.json();
+  function ensureShape() {
+    const p = state.profile || (state.profile = {});
+    p.social_media   = p.social_media   || {};
+    p.media_mentions = p.media_mentions || [];
+    p.research_areas = p.research_areas || [];
+    p.awards         = p.awards         || [];
+    p.patents        = p.patents        || [];
+    p.mentors        = p.mentors        || [];
+    p.colleagues     = p.colleagues     || [];
+    p.partners       = Array.isArray(p.partners) ? p.partners : [];
+    p.positions      = p.positions      || [];
+    p.education      = p.education      || [];
+    p.memberships    = p.memberships    || [];
   }
 
-  async function enrichData(parsed, userContext) {
-    const r = await fetch(`${API}/enrich`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parsed, user_context: userContext })
-    });
-    if (!r.ok) throw new Error('Enrich failed');
-    return r.json();
-  }
-
+  function saveProfile() { ensureShape(); localStorage.setItem('galaxy_profile', JSON.stringify(state.profile)); }
   async function loadProfile() {
-    const local = localStorage.getItem("galaxy_profile");
-    if (local) { 
-      state.profile = JSON.parse(local); 
-      return; 
-    }
+    const local = localStorage.getItem('galaxy_profile');
+    if (local) { try { state.profile = JSON.parse(local); ensureShape(); return; } catch {} }
     try {
-      // 👇 call the backend
-      const res = await fetch(`${API}/profile`, { cache: "no-store" });
-      if (res.ok) {
-        state.profile = await res.json();
-        return;
-      }
-    } catch (err) {
-      console.warn("Falling back to static JSON:", err);
-    }
-
-    // fallback: static JSON file
-    try {
-      const res = await fetch("data/profile.json", { cache: "no-store" });
-      if (res.ok) state.profile = await res.json();
-    } catch (_) {}
+      const r = await fetch('data/profile.json', { cache:'no-store' });
+      if (r.ok) { state.profile = await r.json(); ensureShape(); }
+    } catch {}
   }
 
-  function saveProfile(){ localStorage.setItem("galaxy_profile", JSON.stringify(state.profile)); }
+  /* ---------------- renderers ---------------- */
+  const badge = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
 
-  function updateRemoveButtonsVisibility() {
-    $$(".remove-btn").forEach(b => b.classList.toggle("d-none", !editMode));
+  function renderHeader() {
+    const n = $('#profile_name_display'); if (n) n.textContent = state.profile.name || '—';
+    const a = $('#avatar_wrapper'); if (a) a.style.backgroundImage = `url('${state.profile.photo_url || 'assets/media/avatars/300-1.jpg'}')`;
   }
 
-  function renderList(selector, arr) {
-    const ul = $(selector); if (!ul) return;
-    ul.innerHTML = "";
-    if (!arr?.length) { ul.innerHTML = `<li class="text-muted">—</li>`; return; }
-    arr.forEach((item, i) => {
-      const li = el("li");
-      li.innerHTML = `${item} <button class="btn btn-sm btn-light-danger ms-2 remove-btn" data-remove-list="${selector}" data-index="${i}">Remove</button>`;
-      ul.appendChild(li);
+  function renderSimpleList(sel, key) {
+    const ul = $(sel); if (!ul) return;
+    const arr = state.profile[key] || [];
+    ul.innerHTML = '';
+    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    arr.forEach(v => ul.appendChild(H('li','', v)));
+  }
+
+  function renderSocial() {
+    const ul = $('#social_media_view'); if (!ul) return;
+    const entries = Object.entries(state.profile.social_media || {});
+    ul.innerHTML = '';
+    if (!entries.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    entries.forEach(([k, v]) => ul.appendChild(H('li','', `<strong>${k}:</strong> ${v}`)));
+  }
+
+  function renderResearchAreas() {
+    const w = $('#research_areas_tags'); if (!w) return;
+    const arr = state.profile.research_areas || [];
+    w.innerHTML = arr.length ? arr.map(badge).join('') : '<span class="text-muted">—</span>';
+  }
+
+  function renderAwards() {
+    const ul = $('#awards_list'); if (!ul) return;
+    const arr = state.profile.awards || [];
+    ul.innerHTML = '';
+    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    arr.forEach(a => ul.appendChild(H('li','', `<span class="fw-semibold">${a.year || ''}</span> ${a.title || ''}`)));
+  }
+
+  function renderPatents() {
+    const ul = $('#patents_list'); if (!ul) return;
+    const arr = state.profile.patents || [];
+    ul.innerHTML = '';
+    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    arr.forEach(pt => {
+      const color = (pt.status||'').toLowerCase()==='pending' ? 'text-warning' : 'text-success';
+      ul.appendChild(H('li','mb-3', `
+        <div class="fw-semibold">${pt.title || ''}</div>
+        <div>No: ${pt.number || ''}</div>
+        <div>Inventors: ${(Array.isArray(pt.inventors)?pt.inventors:String(pt.inventors||'').split(',')).filter(Boolean).join(', ')}</div>
+        <div>Filed: ${pt.filed || ''}</div>
+        <div class="${color}">● ${pt.status || ''}</div>
+      `));
     });
   }
 
-  function render() {
-    const p = state.profile;
-
-    // header/avatar
-    $("#profile_name_display").textContent = p.name || "—";
-    const wrapper = $("#avatar_wrapper");
-    if (wrapper) wrapper.style.backgroundImage = `url('${p.photo_url || "assets/media/avatars/300-1.jpg"}')`;
-
-    // lists
-    renderList("#positions_list", p.positions);
-    renderList("#affiliations_list", p.affiliations);
-    renderList("#education_list", p.education);
-    renderList("#memberships_list", p.memberships);
-    renderList("#mentors_list", p.mentors);
-    renderList("#colleagues_list", p.colleagues);
-
-    // social media (view + editor rows)
-    const smView = $("#social_media_view");
-    if (smView) {
-      smView.innerHTML = "";
-      const keys = Object.keys(p.social_media || {});
-      if (!keys.length) smView.innerHTML = `<li class="text-muted">—</li>`;
-      keys.forEach(k => smView.appendChild(el("li", null, `<span class="fw-semibold">${k}:</span> ${p.social_media[k]}`)));
-    }
-    const smList = $("#social_media_list");
-    if (smList) {
-      smList.innerHTML = "";
-      Object.keys(p.social_media || {}).forEach(k => {
-        smList.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.social_media[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="social_media" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // research areas (chips)
-    const rtags = $("#research_areas_tags");
-    if (rtags) rtags.innerHTML = (p.research_areas || []).map(pill).join("") || `<span class="text-muted">—</span>`;
-
-    // awards
-    const aw = $("#awards_list");
-    if (aw) {
-      aw.innerHTML = "";
-      if (!p.awards?.length) aw.innerHTML = `<li class="text-muted">—</li>`;
-      (p.awards || []).forEach(a => {
-        aw.appendChild(el("li", null, `<span class="fw-semibold">${a.year||""}</span> ${a.title||""}
-          <button class="btn btn-sm btn-light-danger ms-3 remove-btn" data-remove="awards" data-year="${a.year}" data-title="${a.title}">Remove</button>`));
-      });
-    }
-
-    // patents
-    const pl = $("#patents_list");
-    if (pl) {
-      pl.innerHTML = "";
-      if (!p.patents?.length) pl.innerHTML = `<li class="text-muted">—</li>`;
-      (p.patents || []).forEach((pt, idx) => {
-        const color = (pt.status||"").toLowerCase()==="pending" ? "text-warning" : "text-success";
-        pl.appendChild(el("li","mb-3",`
-          <div class="fw-semibold">${pt.title||""}</div>
-          <div>No: ${pt.number||""}</div>
-          <div>Inventors: ${(pt.inventors||[]).join(", ")}</div>
-          <div>Filed: ${pt.filed||""}</div>
-          <div class="${color}">● ${pt.status||""}</div>
-          <button class="btn btn-sm btn-light-danger mt-1 remove-btn" data-remove="patents" data-index="${idx}">Remove</button>`));
-      });
-    }
-
-    // partners
-    const pv = $("#partners_view");
+  function renderAll() {
+    renderHeader();
+    renderSocial();
+    renderSimpleList('#media_mentions_list','media_mentions');
+    renderResearchAreas();
+    renderAwards();
+    renderPatents();
+    renderSimpleList('#mentors_list','mentors');
+    renderSimpleList('#colleagues_list','colleagues');
+    // partners is a special layout
+    const pv = $('#partners_view');
     if (pv) {
-      pv.innerHTML = "";
-      const pk = Object.keys(p.partners||{});
-      if (!pk.length) pv.innerHTML = `<li class="text-muted">—</li>`;
-      pk.forEach(k => pv.appendChild(el("li", null, `<span class="fw-semibold">${p.partners[k]}</span> ${k}`)));
+      const arr = state.profile.partners || [];
+      pv.innerHTML = arr.length ? arr.map(p=>`<li><span class="fw-semibold">${p.count}</span> ${p.type}</li>`).join('') : '<li class="text-muted">—</li>';
     }
-    const plst = $("#partners_list");
-    if (plst) {
-      plst.innerHTML = "";
-      Object.keys(p.partners||{}).forEach(k => {
-        plst.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.partners[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="partners" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // finally, sync remove buttons visibility with current mode
-    updateRemoveButtonsVisibility();
+    renderSimpleList('#positions_list','positions');
+    renderSimpleList('#education_list','education');
+    renderSimpleList('#memberships_list','memberships');
+    reflectEditMode();
   }
 
-  // editors / events
-  function wireEditors() {
-    // adders
-    const addList = (inputSel, key) => {
-      const v = $(inputSel)?.value.trim(); if (!v) return;
-      (state.profile[key] ||= []).push(v); $(inputSel).value=""; saveProfile(); render();
+  /* ---------------- edit-mode tiny buttons ---------------- */
+  function reflectEditMode() {
+    const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
+    $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
+  }
+
+  // inject ONE tiny edit button per card
+  function ensureTinyButtons() {
+    const configs = [
+      { key:'social',  anchor:'#social_media_view',   title:'Edit: Social Media',        build: buildSocialModal },
+      { key:'media',   anchor:'#media_mentions_list', title:'Edit: Media Appearances',   build: () => buildSimpleLinesModal('media_mentions','One per line') },
+      // SINGLE button for the Research card → edits research areas + awards + patents
+      { key:'research_all', anchor:'#research_areas_tags', title:'Edit: Research Area',   build: buildResearchAwardsPatentsModal },
+      { key:'mentorscol', anchor:'#mentors_list',     title:'Edit: Mentors & Colleagues', build: buildMentorsColleaguesModal },
+      { key:'partners', anchor:'#partners_view',      title:'Edit: Partners',             build: buildPartnersModal },
+      { key:'positions',anchor:'#positions_list',     title:'Edit: Positions',            build: () => buildSimpleLinesModal('positions','One per line') },
+      { key:'education',anchor:'#education_list',     title:'Edit: Education',            build: () => buildSimpleLinesModal('education','One per line') },
+      { key:'members',  anchor:'#memberships_list',   title:'Edit: Memberships',          build: () => buildSimpleLinesModal('memberships','One per line') },
+    ];
+
+    configs.forEach(cfg => {
+      const card = document.querySelector(cfg.anchor)?.closest('.card');
+      const header = card?.querySelector('.card-header');
+      if (!header) return;
+
+      // Clean up any older multiple buttons inside this header
+      header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
+
+      let rail = header.querySelector('.card-toolbar');
+      if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
+
+      const btn = H('button','btn btn-sm btn-light box-edit-btn d-none','Edit');
+      btn.addEventListener('click', () => openModal(cfg.title, ...cfg.build()));
+      rail.appendChild(btn);
+    });
+  }
+
+  /* ---------------- shared modal shell ---------------- */
+  let bsModal;
+  function ensureModal() {
+    if ($('#galaxy_box_modal')) return;
+    const shell = H('div','modal fade','');
+    shell.id = 'galaxy_box_modal';
+    shell.tabIndex = -1;
+    shell.innerHTML = `
+      <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 class="modal-title">Edit</h3>
+            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal"><i class="ki-duotone ki-cross fs-2"></i></button>
+          </div>
+          <div class="modal-body"><div id="galaxy_box_modal_body"></div></div>
+          <div class="modal-footer">
+            <button id="galaxy_box_modal_save" class="btn btn-primary">Save</button>
+            <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(shell);
+    bsModal = new bootstrap.Modal(shell);
+  }
+
+  function openModal(title, bodyNode, onSave) {
+    ensureModal();
+    $('#galaxy_box_modal .modal-title').textContent = title;
+    const body = $('#galaxy_box_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+
+    const oldSave = $('#galaxy_box_modal_save');
+    const newSave = oldSave.cloneNode(true);
+    oldSave.parentNode.replaceChild(newSave, oldSave);
+    newSave.addEventListener('click', async () => {
+      await onSave();
+      saveProfile();
+      renderAll();
+      bsModal.hide();
+    });
+
+    bsModal.show();
+  }
+
+  /* ---------------- modal builders ---------------- */
+  function labeledSection(title) {
+    const s = H('div','mb-6','');
+    s.appendChild(H('div','fw-bold fs-5 mb-3', title));
+    const box = H('div','p-4 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+    s.appendChild(box);
+    return {wrap:s, box};
+  }
+
+  function buildSimpleLinesModal(key, hint='One per line') {
+    const {wrap, box} = labeledSection(hint);
+    const ta = H('textarea','form-control', (state.profile[key]||[]).join('\n')); ta.rows = 10; box.appendChild(ta);
+    const onSave = () => { state.profile[key] = ta.value.split('\n').map(s=>s.trim()).filter(Boolean); };
+    return [wrap, onSave];
+  }
+
+  function buildSocialModal() {
+    const {wrap, box} = labeledSection('Add, edit, or remove your social links.');
+    const list = H('div','d-flex flex-column gap-2','');
+    const row = (k='',v='') => {
+      const r = H('div','d-flex gap-2 align-items-center','');
+      r.innerHTML = `
+        <input class="form-control" placeholder="Platform (e.g., LinkedIn)" value="${k}">
+        <input class="form-control" placeholder="Handle / URL" value="${v}">
+        <button class="btn btn-light-danger">Remove</button>`;
+      r.lastElementChild.addEventListener('click',()=>r.remove());
+      return r;
     };
-    $on($("[data-add='positions']"), "click", () => addList("#positions_input","positions"));
-    $on($("[data-add='affiliations']"), "click", () => addList("#affiliations_input","affiliations"));
-    $on($("[data-add='media_mentions']"), "click", () => addList("#media_mentions_input","media_mentions"));
-    $on($("[data-add='mentors']"), "click", () => addList("#mentors_input","mentors"));
-    $on($("[data-add='colleagues']"), "click", () => addList("#colleagues_input","colleagues"));
-    $on($("[data-add='education']"), "click", () => addList("#education_input","education"));
-    $on($("[data-add='memberships']"), "click", () => addList("#memberships_input","memberships"));
+    Object.entries(state.profile.social_media||{}).forEach(([k,v])=>list.appendChild(row(k,v)));
+    const add = H('button','btn btn-light mt-3','+ Add row'); add.addEventListener('click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+    const onSave = () => {
+      const next={}; list.querySelectorAll(':scope > div').forEach(d=>{
+        const [p,h] = d.querySelectorAll('input'); const pk=p.value.trim(), hv=h.value.trim();
+        if (pk && hv) next[pk]=hv;
+      });
+      state.profile.social_media = next;
+    };
+    return [wrap,onSave];
+  }
 
-    $on($("[data-add='social_media']"), "click", () => {
-      const k=$("#sm_key")?.value.trim(), v=$("#sm_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.social_media ||= {})[k]=v; $("#sm_key").value=""; $("#sm_val").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='partners']"), "click", () => {
-      const k=$("#partner_key")?.value.trim(), v=$("#partner_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.partners ||= {})[k]=v; $("#partner_key").value=""; $("#partner_val").value="";
-      saveProfile(); render();
-    });
+  // ONE modal for Research Areas + Awards + Patents (matches your screenshot idea)
+  function buildResearchAwardsPatentsModal() {
+    const root = H('div');
 
-    $on($("[data-add='awards']"), "click", () => {
-      const year=$("#award_year")?.value.trim(), title=$("#award_title")?.value.trim(); if(!year||!title) return;
-      (state.profile.awards ||= []).push({year,title}); $("#award_year").value=""; $("#award_title").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='patents']"), "click", () => {
-      const title=$("#pat_title")?.value.trim(); if(!title) return;
-      const number=$("#pat_number")?.value.trim();
-      const inventors=($("#pat_inventors")?.value||"").split(",").map(s=>s.trim()).filter(Boolean);
-      const filed=$("#pat_filed")?.value.trim(); const status=$("#pat_status")?.value;
-      (state.profile.patents ||= []).push({title, number, inventors, filed, status});
-      ["#pat_title","#pat_number","#pat_inventors","#pat_filed"].forEach(s=>$(s).value="");
-      saveProfile(); render();
-    });
+    // Research Areas
+    {
+      const sec = labeledSection('Research Areas');
+      const list = H('div','d-flex flex-column gap-2','');
+      const row = (val='') => {
+        const r = H('div','d-flex gap-2 align-items-center','');
+        r.innerHTML = `
+          <input class="form-control" placeholder="add research area" value="${val}">
+          <button class="btn btn-icon btn-light"><i class="ki-duotone ki-cross"></i></button>`;
+        r.lastElementChild.addEventListener('click',()=>r.remove());
+        return r;
+      };
+      (state.profile.research_areas||[]).forEach(a => list.appendChild(row(a)));
+      const add = H('button','btn btn-light mt-3','+ Add area'); add.addEventListener('click',()=>list.appendChild(row()));
+      sec.box.appendChild(list); sec.box.appendChild(add);
+      root.appendChild(sec.wrap);
 
-    // generic removes
-    document.addEventListener("click", (e) => {
-      const t = e.target; if (!(t instanceof HTMLElement)) return;
+      // capture onSave piece
+      root._saveAreas = () => {
+        const arr=[];
+        list.querySelectorAll('input').forEach(i=>{ const v=i.value.trim(); if(v) arr.push(v); });
+        state.profile.research_areas = arr;
+      };
+    }
 
-      if (t.hasAttribute("data-remove-list")) {
-        const sel = t.getAttribute("data-remove-list");
-        const idx = +t.getAttribute("data-index");
-        const map = {
-          "#positions_list":"positions","#affiliations_list":"affiliations",
-          "#media_mentions_list":"media_mentions","#mentors_list":"mentors",
-          "#colleagues_list":"colleagues","#education_list":"education","#memberships_list":"memberships"
-        };
-        const key = map[sel]; if (!key) return;
-        state.profile[key].splice(idx,1); saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="social_media") {
-        delete state.profile.social_media[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="partners") {
-        delete state.profile.partners[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="awards") {
-        const y=t.getAttribute("data-year"), ti=t.getAttribute("data-title");
-        state.profile.awards = (state.profile.awards||[]).filter(a=>!(a.year===y && a.title===ti));
-        saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="patents") {
-        const idx = +t.getAttribute("data-index");
-        state.profile.patents.splice(idx,1); saveProfile(); render();
-      }
-    });
+    // Awards & Honors
+    {
+      const sec = labeledSection('Awards & Honors');
+      const list = H('div','d-flex flex-column gap-2','');
+      const row = (year='', title='') => {
+        const r = H('div','d-flex gap-2 align-items-center','');
+        r.innerHTML = `
+          <div class="text-gray-500 fs-8">year</div>
+          <input class="form-control" style="max-width:160px" value="${year}">
+          <div class="text-gray-500 fs-8 ms-3">title</div>
+          <input class="form-control" value="${title}">
+          <button class="btn btn-light-danger">Remove</button>`;
+        r.lastElementChild.addEventListener('click',()=>r.remove());
+        return r;
+      };
+      (state.profile.awards||[]).forEach(a => list.appendChild(row(a.year||'', a.title||'')));
+      const add = H('button','btn btn-light mt-3','+ Add award'); add.addEventListener('click',()=>list.appendChild(row()));
+      sec.box.appendChild(list); sec.box.appendChild(add);
+      root.appendChild(sec.wrap);
 
-    // avatar preview
-    $on($("#photo_input"), "change", (e) => {
+      root._saveAwards = () => {
+        const next=[]; list.querySelectorAll(':scope > div').forEach(d=>{
+          const ins = d.querySelectorAll('input');
+          const year = (ins[0]?.value||'').trim(); const title=(ins[1]?.value||'').trim();
+          if (title) next.push({year, title});
+        });
+        state.profile.awards = next;
+      };
+    }
+
+    // Patents
+    {
+      const sec = labeledSection('Patents');
+      const list = H('div','d-flex flex-column gap-3','');
+      const card = (pt={}) => {
+        const inv = Array.isArray(pt.inventors)?pt.inventors.join(', '):(pt.inventors||'');
+        const c = H('div','p-3 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+        c.innerHTML = `
+          <div class="row g-2">
+            <div class="col-md-6"><input class="form-control" placeholder="Title" value="${pt.title||''}"></div>
+            <div class="col-md-6"><input class="form-control" placeholder="Number" value="${pt.number||''}"></div>
+            <div class="col-md-6"><input class="form-control" placeholder="Inventors (comma-separated)" value="${inv}"></div>
+            <div class="col-md-3"><input class="form-control" placeholder="Filed (YYYY-MM)" value="${pt.filed||''}"></div>
+            <div class="col-md-3">
+              <select class="form-select">
+                <option ${pt.status==='Pending'?'selected':''}>Pending</option>
+                <option ${pt.status==='Granted'?'selected':''}>Granted</option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-2 text-end">
+            <button class="btn btn-sm btn-light-danger">Remove</button>
+          </div>`;
+        c.querySelector('.btn-light-danger').addEventListener('click',()=>c.remove());
+        return c;
+      };
+      (state.profile.patents||[]).forEach(p => list.appendChild(card(p)));
+      const add = H('button','btn btn-light mt-3','+ Add patent'); add.addEventListener('click',()=>list.appendChild(card()));
+      sec.box.appendChild(list); sec.box.appendChild(add);
+      root.appendChild(sec.wrap);
+
+      root._savePatents = () => {
+        const next=[]; list.querySelectorAll(':scope > .p-3').forEach(b=>{
+          const ins=b.querySelectorAll('input,select');
+          const [tEl,nEl,iEl,fEl,sEl]=ins;
+          const title=tEl.value.trim(); if (!title) return;
+          next.push({
+            title,
+            number:nEl.value.trim(),
+            inventors:(iEl.value||'').split(',').map(s=>s.trim()).filter(Boolean),
+            filed:fEl.value.trim(),
+            status:sEl.value.trim()
+          });
+        });
+        state.profile.patents = next;
+      };
+    }
+
+    const onSave = () => {
+      root._saveAreas && root._saveAreas();
+      root._saveAwards && root._saveAwards();
+      root._savePatents && root._savePatents();
+    };
+    return [root, onSave];
+  }
+
+  function buildMentorsColleaguesModal() {
+    const sec = H('div','row','');
+    const c1 = H('div','col-md-6','<div class="fw-semibold mb-2">Mentors</div>');
+    const c2 = H('div','col-md-6','<div class="fw-semibold mb-2">Colleagues</div>');
+    const t1 = H('textarea','form-control', (state.profile.mentors||[]).join('\n')); t1.rows=10;
+    const t2 = H('textarea','form-control', (state.profile.colleagues||[]).join('\n')); t2.rows=10;
+    c1.appendChild(t1); c2.appendChild(t2); sec.appendChild(c1); sec.appendChild(c2);
+    const onSave = () => {
+      state.profile.mentors = t1.value.split('\n').map(s=>s.trim()).filter(Boolean);
+      state.profile.colleagues = t2.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    };
+    return [sec, onSave];
+  }
+
+  function buildPartnersModal() {
+    const {wrap, box} = labeledSection('Type + Count (e.g., Academic • 5)');
+    const list = H('div','d-flex flex-column gap-2','');
+    const row = (type='', count='') => {
+      const r = H('div','d-flex gap-2 align-items-center','');
+      r.innerHTML = `
+        <input class="form-control" placeholder="Type" value="${type}">
+        <input class="form-control" placeholder="Count" value="${count}">
+        <button class="btn btn-light-danger">Remove</button>`;
+      r.lastElementChild.addEventListener('click',()=>r.remove());
+      return r;
+    };
+    (state.profile.partners||[]).forEach(p => list.appendChild(row(p.type||'', p.count||'')));
+    const add = H('button','btn btn-light mt-3','+ Add partner'); add.addEventListener('click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+    const onSave = () => {
+      const next=[]; list.querySelectorAll(':scope > div').forEach(d=>{
+        const [t,c]=d.querySelectorAll('input'); const type=t.value.trim(), count=c.value.trim();
+        if (type && count) next.push({type, count});
+      });
+      state.profile.partners = next;
+    };
+    return [wrap,onSave];
+  }
+
+  /* ---------------- avatar & edit toggle ---------------- */
+  function wireAvatar() {
+    on($('#photo_input'),'change', e => {
       const f = e.target.files?.[0]; if (!f) return;
       const r = new FileReader();
-      r.onload = () => {
-        state.profile.photo_url = r.result;
-        const wrap = $("#avatar_wrapper");
-        if (wrap) wrap.style.backgroundImage = `url('${state.profile.photo_url}')`;
-        saveProfile();
-      };
+      r.onload = () => { state.profile.photo_url = r.result; saveProfile(); renderHeader(); };
       r.readAsDataURL(f);
     });
-
-    // per-card edit buttons toggle editor visibility
-    $$(".box-edit-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const targets = (btn.getAttribute("data-edit-target") || "").split(",").map(s => s.trim()).filter(Boolean);
-        targets.forEach(sel => { const ed = $(sel); if (ed) ed.classList.toggle("d-none"); });
-      });
-    });
-
-    // global edit toggle
-    const setEditMode = (on) => {
-      editMode = on;
-      const btn = $("#editToggle"); if (btn) btn.textContent = on ? "Done" : "Edit";
-      $$(".box-edit-btn").forEach(b => b.classList.toggle("d-none", !on));
-      if (!on) { $$(".editor").forEach(ed => ed.classList.add("d-none")); }
-      updateRemoveButtonsVisibility();
-    };
-    $on($("#editToggle"), "click", () => setEditMode(!editMode));
-    setEditMode(false); // start off
   }
 
-  // Tagify
-  function initTagify() {
-    const input = $("#research_areas_tagify");
-    if (!input || !window.Tagify) return;
-    const tagify = new Tagify(input, {
-      originalInputValueFormat: (values) => values.map(v => v.value).join(", ")
+  function wireEditToggle() {
+    on($('#editToggle'),'click', e => {
+      e.preventDefault();
+      editMode = !editMode;
+      reflectEditMode();
     });
-    tagify.addTags(state.profile.research_areas || []);
-    const sync = () => {
-      state.profile.research_areas = tagify.value.map(t => t.value);
-      saveProfile();
-      const rtags = $("#research_areas_tags");
-      if (rtags) rtags.innerHTML =
-        (state.profile.research_areas || []).map(t => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`).join("")
-        || `<span class="text-muted">—</span>`;
-    };
-    tagify.on("add", sync); tagify.on("remove", sync); tagify.on("blur", sync);
   }
 
-  document.addEventListener("DOMContentLoaded", async () => {
+  /* ---------------- boot ---------------- */
+  document.addEventListener('DOMContentLoaded', async () => {
     await loadProfile();
-    wireEditors();
-    initTagify();
-    render();
+    ensureShape();
+
+    ensureTinyButtons();   // inject ONE tiny edit button for each card
+    wireEditToggle();
+    wireAvatar();
+
+    renderAll();
   });
 })();

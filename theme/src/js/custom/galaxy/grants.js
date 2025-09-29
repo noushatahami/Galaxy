@@ -1,240 +1,405 @@
 // theme/src/js/custom/galaxy/grants.js
+(() => {
+  /* ----------------------- utils ----------------------- */
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const H  = (t, c='', inner='') => { const n=document.createElement(t); if(c)n.className=c; if(inner!=null)n.innerHTML=inner; return n; };
+  const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+  const API = location.hostname === 'localhost' ? 'http://127.0.0.1:3001/api' : '/api';
+  const fmtMoney = (n) => (n==null || n===''
+    ? '—'
+    : Number(n).toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 })
+  );
+  const sum = (arr) => arr.reduce((a,b)=>a+(Number(b)||0),0);
 
-const API = (location.hostname === 'localhost')
-  ? 'http://127.0.0.1:3001/api'
-  : '/api';
+  /* ----------------------- state ----------------------- */
+  let editMode = false;
+  const state = {
+    grants: [],             // [{id,title,agency,type,duration,amountAwarded,amountReceived,amountSpent,tags[],awardedAt}]
+    totals: { totalAwarded: 0, availableBudget: 0 },
+    lastAwarded: null,      // grant object
+    breakdown: { categories: [], total: 0 }, // {label,value}[]
+    reports: { grantId: '', nextDue: '', lastSubmitted: '' },
+    keywords: []            // [string]
+  };
 
-const state = {
-  // raw
-  grants: [],            // [{id,title,agency,type,amountAwarded,amountReceived,amountSpent,tags,awardedAt,...}]
-  breakdown: null,       // { categories:[{label,value}], total:number } (flexible)
-  reports: null,         // { grantId,nextDue,lastSubmitted }
-  keywords: [],          // ["nlp","genomics",...]
-  // derived
-  totals: { totalAwarded: 0, availableBudget: 0 },
-  lastAwarded: null      // grant object
-};
-
-/** ---------- utils ---------- */
-const $ = (sel) => document.querySelector(sel);
-const sum = (arr) => arr.reduce((a,b)=>a+(Number(b)||0),0);
-const fmtMoney = (n) => (n==null ? '—' :
-  n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }));
-
-function byDateDesc(a,b){
-  const da = new Date(a?.awardedAt || a?.date || 0).getTime();
-  const db = new Date(b?.awardedAt || b?.date || 0).getTime();
-  return db - da;
-}
-
-async function fetchJSON(url, opts){
-  const r = await fetch(url, opts);
-  if(!r.ok) throw new Error(`${url} -> ${r.status}`);
-  return r.json();
-}
-
-/** ---------- derive helpers ---------- */
-function deriveTotals(grants){
-  const totalAwarded = sum(grants.map(g=>g.amountAwarded||g.amount||0));
-  const totalReceived = sum(grants.map(g=>g.amountReceived||0));
-  const totalSpent    = sum(grants.map(g=>g.amountSpent||0));
-  const availableBudget = Math.max(totalReceived - totalSpent, 0);
-  return { totalAwarded, availableBudget };
-}
-
-function pickLastAwarded(grants){
-  if(!grants?.length) return null;
-  const sorted = [...grants].sort(byDateDesc);
-  return sorted[0];
-}
-
-function deriveKeywords(grants){
-  const set = new Set();
-  (grants||[]).forEach(g=>{
-    (g.tags||g.keywords||[]).forEach(t=>set.add(t));
-  });
-  return [...set].slice(0, 20);
-}
-
-/** ---------- data loading ---------- */
-async function loadFromAPI(){
-  // Expected (but optional) endpoints:
-  //   GET /api/grants                 -> { grants:[...] }
-  //   GET /api/grants/summary         -> { totalAwarded, availableBudget, lastAwarded:{...}? }
-  //   GET /api/grants/breakdown       -> { categories:[{label,value}], total:number } (or any shape you like)
-  //   GET /api/grants/reports         -> { grantId,nextDue,lastSubmitted }
-  //   GET /api/grants/keywords        -> { keywords:[...] }
-  const [grantsP, summaryP, breakdownP, reportsP, keywordsP] = await Promise.allSettled([
-    fetchJSON(`${API}/grants`),
-    fetchJSON(`${API}/grants/summary`),
-    fetchJSON(`${API}/grants/breakdown`),
-    fetchJSON(`${API}/grants/reports`),
-    fetchJSON(`${API}/grants/keywords`)
-  ]);
-
-  const grants = grantsP.status==='fulfilled'
-    ? (grantsP.value.grants || grantsP.value || [])
-    : [];
-
-  const summary = summaryP.status==='fulfilled' ? summaryP.value : null;
-  const totals = summary?.totalAwarded!=null && summary?.availableBudget!=null
-    ? { totalAwarded: summary.totalAwarded, availableBudget: summary.availableBudget }
-    : deriveTotals(grants);
-  const lastAwarded = summary?.lastAwarded || pickLastAwarded(grants);
-
-  const breakdown = breakdownP.status==='fulfilled' ? (breakdownP.value || null) : null;
-  const reports   = reportsP.status==='fulfilled'   ? (reportsP.value || null)   : null;
-  const keywords  = keywordsP.status==='fulfilled'
-    ? (keywordsP.value.keywords || keywordsP.value || [])
-    : deriveKeywords(grants);
-
-  return { grants, totals, lastAwarded, breakdown, reports, keywords };
-}
-
-async function loadFromStatic(){
-  // Fallback seed at theme/dist/data/grants.json (copy from src/data via CopyWebpackPlugin)
-  const data = await fetchJSON('data/grants.json').catch(()=> ({}));
-  const grants     = data.grants || data || [];
-  const totals     = data.totals || deriveTotals(grants);
-  const lastAwarded= data.lastAwarded || pickLastAwarded(grants);
-  const breakdown  = data.breakdown || null;
-  const reports    = data.reports || null;
-  const keywords   = data.keywords || deriveKeywords(grants);
-  return { grants, totals, lastAwarded, breakdown, reports, keywords };
-}
-
-async function loadAll(){
-  try {
-    const d = await loadFromAPI();
-    Object.assign(state, d);
-    return;
-  } catch(e){
-    console.warn('[grants] API failed, using static:', e);
-  }
-  try {
-    const d = await loadFromStatic();
-    Object.assign(state, d);
-  } catch(e){
-    console.error('[grants] No data available:', e);
-  }
-}
-
-/** ---------- renderers ---------- */
-
-// Stat tiles
-function renderTotals(){
-  const totalEl = document.getElementById('total_grants_awarded');
-  const availEl = document.getElementById('available_budget');
-  if (totalEl) totalEl.textContent = fmtMoney(state.totals.totalAwarded);
-  if (availEl) availEl.textContent = fmtMoney(state.totals.availableBudget);
-}
-
-// Last Awarded Grant card
-function renderLastAwarded(){
-  const ul = document.getElementById('last_awarded_grant');
-  if(!ul) return;
-  ul.innerHTML = '';
-
-  const g = state.lastAwarded;
-  if(!g){
-    ul.innerHTML = `<li class="text-gray-400">—</li>`;
-    return;
+  /* ----------------------- persistence ----------------------- */
+  function save() { localStorage.setItem('galaxy_grants', JSON.stringify(state)); }
+  async function load() {
+    const local = localStorage.getItem('galaxy_grants');
+    if (local) {
+      try { Object.assign(state, JSON.parse(local)); return; } catch {}
+    }
+    // Optional: try API, then static
+    try {
+      const [gr, sm, br, rp, kw] = await Promise.allSettled([
+        fetch(`${API}/grants`),
+        fetch(`${API}/grants/summary`),
+        fetch(`${API}/grants/breakdown`),
+        fetch(`${API}/grants/reports`),
+        fetch(`${API}/grants/keywords`)
+      ]);
+      if (gr.status==='fulfilled' && gr.value.ok) {
+        const data = await gr.value.json();
+        state.grants = data.grants || data || [];
+      }
+      if (sm.status==='fulfilled' && sm.value.ok) {
+        const s = await sm.value.json();
+        if (s.totalAwarded!=null && s.availableBudget!=null) {
+          state.totals = { totalAwarded: s.totalAwarded, availableBudget: s.availableBudget };
+        }
+        if (s.lastAwarded) state.lastAwarded = s.lastAwarded;
+      }
+      if (br.status==='fulfilled' && br.value.ok) {
+        const b = await br.value.json();
+        state.breakdown = b || state.breakdown;
+      }
+      if (rp.status==='fulfilled' && rp.value.ok) {
+        const r = await rp.value.json();
+        state.reports = r || state.reports;
+      }
+      if (kw.status==='fulfilled' && kw.value.ok) {
+        const k = await kw.value.json();
+        state.keywords = k.keywords || k || state.keywords;
+      }
+      // Fallback derivations
+      if (!state.totals || state.totals.totalAwarded==null) deriveTotals();
+      if (!state.lastAwarded) deriveLastAwarded();
+      if (!state.keywords?.length) deriveKeywords();
+      return;
+    } catch {}
+    // Static fallback
+    try {
+      const r = await fetch('data/grants.json', { cache:'no-store' });
+      if (r.ok) {
+        const d = await r.json();
+        state.grants      = d.grants || d || [];
+        state.totals      = d.totals || state.totals;
+        state.lastAwarded = d.lastAwarded || state.lastAwarded;
+        state.breakdown   = d.breakdown || state.breakdown;
+        state.reports     = d.reports || state.reports;
+        state.keywords    = d.keywords || state.keywords;
+      }
+    } catch {}
+    if (!state.totals || state.totals.totalAwarded==null) deriveTotals();
+    if (!state.lastAwarded) deriveLastAwarded();
+    if (!state.keywords?.length) deriveKeywords();
   }
 
-  const rows = [
-    ['Title', g.title],
-    ['Grant ID', g.id || g.grantId],
-    ['Agency', g.agency],
-    ['Type', g.type],
-    ['Duration', g.duration],
-    ['Amount Awarded', fmtMoney(g.amountAwarded || g.amount)],
-    ['Amount Received', fmtMoney(g.amountReceived)],
-    ['Amount Spent', fmtMoney(g.amountSpent)],
-    ['Tags', (g.tags||g.keywords||[]).map(t=>`<span class="badge bg-secondary me-1 mb-1">${t}</span>`).join(' ')]
-  ];
-
-  rows.forEach(([k,v])=>{
-    const li = document.createElement('li');
-    li.innerHTML = `<strong>${k}:</strong> ${v!=null && v!=='' ? v : '—'}`;
-    ul.appendChild(li);
-  });
-}
-
-// Breakdown card
-function renderBreakdown(){
-  const wrap = document.getElementById('breakdown');
-  if(!wrap) return;
-  wrap.innerHTML = '';
-
-  const b = state.breakdown;
-  if(!b || !Array.isArray(b.categories) || !b.categories.length){
-    wrap.textContent = '—';
-    return;
+  /* ----------------------- derivations ----------------------- */
+  function deriveTotals() {
+    const totalAwarded  = sum(state.grants.map(g=>g.amountAwarded||g.amount||0));
+    const totalReceived = sum(state.grants.map(g=>g.amountReceived||0));
+    const totalSpent    = sum(state.grants.map(g=>g.amountSpent||0));
+    const availableBudget = Math.max(totalReceived - totalSpent, 0);
+    state.totals = { totalAwarded, availableBudget };
+  }
+  function deriveLastAwarded() {
+    if (!state.grants?.length) { state.lastAwarded = null; return; }
+    state.lastAwarded = [...state.grants].sort((a,b) =>
+      new Date(b.awardedAt||0) - new Date(a.awardedAt||0)
+    )[0];
+  }
+  function deriveKeywords() {
+    const set = new Set();
+    (state.grants||[]).forEach(g => (g.tags||g.keywords||[]).forEach(t => set.add(t)));
+    state.keywords = [...set].slice(0, 30);
   }
 
-  // Simple text bars (no external chart lib)
-  const total = b.total || sum(b.categories.map(c=>Number(c.value)||0)) || 1;
-  b.categories.forEach(cat=>{
-    const pct = Math.round((Number(cat.value||0)/total)*100);
-    const row = document.createElement('div');
-    row.className = 'mb-3';
-    row.innerHTML = `
-      <div class="d-flex justify-content-between">
-        <span class="text-gray-300">${cat.label}</span>
-        <span class="text-gray-300">${fmtMoney(cat.value)} · ${pct}%</span>
+  /* ----------------------- renderers ----------------------- */
+  function renderTotals() {
+    const totalEl = $('#total_grants_awarded');
+    const availEl = $('#available_budget');
+    if (totalEl) totalEl.textContent = fmtMoney(state.totals.totalAwarded);
+    if (availEl) availEl.textContent = fmtMoney(state.totals.availableBudget);
+  }
+
+  function renderLastAwarded() {
+    const ul = $('#last_awarded_grant'); if (!ul) return;
+    ul.innerHTML = '';
+    const g = state.lastAwarded;
+    if (!g) { ul.innerHTML = '<li class="text-gray-400">—</li>'; return; }
+    const rows = [
+      ['Title', g.title],
+      ['Grant ID', g.id || g.grantId],
+      ['Agency', g.agency],
+      ['Type', g.type],
+      ['Duration', g.duration],
+      ['Amount Awarded', fmtMoney(g.amountAwarded || g.amount)],
+      ['Amount Received', fmtMoney(g.amountReceived)],
+      ['Amount Spent', fmtMoney(g.amountSpent)],
+      ['Awarded', g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'],
+      ['Tags', (g.tags||g.keywords||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ')]
+    ];
+    rows.forEach(([k,v]) => {
+      const li = H('li','', `<strong>${k}:</strong> ${v!=null && v!=='' ? v : '—'}`);
+      ul.appendChild(li);
+    });
+  }
+
+  function renderBreakdown() {
+    const wrap = $('#breakdown'); if (!wrap) return;
+    wrap.innerHTML = '';
+    const b = state.breakdown;
+    const cats = b?.categories || [];
+    if (!cats.length) { wrap.textContent = '—'; return; }
+    const total = b.total || sum(cats.map(c=>Number(c.value)||0)) || 1;
+    cats.forEach(c => {
+      const val = Number(c.value)||0;
+      const pct = Math.round((val/total)*100);
+      const row = H('div','mb-3','');
+      row.innerHTML = `
+        <div class="d-flex justify-content-between">
+          <span class="text-gray-300">${c.label || '—'}</span>
+          <span class="text-gray-300">${fmtMoney(val)} · ${pct}%</span>
+        </div>
+        <div class="h-6px bg-light rounded">
+          <div class="h-6px bg-primary rounded" style="width:${pct}%"></div>
+        </div>`;
+      wrap.appendChild(row);
+    });
+  }
+
+  function renderReports() {
+    const gid  = $('#reports_grant_id');
+    const due  = $('#reports_next_due');
+    const last = $('#reports_last_submitted');
+    const r = state.reports || {};
+    if (gid)  gid.textContent  = r.grantId ? String(r.grantId) : '—';
+    if (due)  due.textContent  = r.nextDue || '—';
+    if (last) last.textContent = r.lastSubmitted || '—';
+  }
+
+  function renderKeywords() {
+    const wrap = $('#keywords_section'); if (!wrap) return;
+    wrap.innerHTML = '';
+    if (!state.keywords?.length) {
+      wrap.appendChild(H('span','badge bg-success bg-opacity-20 text-success','—')); return;
+    }
+    state.keywords.forEach(k => wrap.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', k)));
+  }
+
+  function renderAll() {
+    renderTotals();
+    renderLastAwarded();
+    renderBreakdown();
+    renderReports();
+    renderKeywords();
+    reflectEditMode();
+  }
+
+  /* ----------------------- edit-mode UI ----------------------- */
+  function reflectEditMode() {
+    const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
+    $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
+  }
+
+  function wireEditToggle() {
+    on($('#editToggle'), 'click', (e) => {
+      e.preventDefault();
+      editMode = !editMode;
+      reflectEditMode();
+    });
+  }
+
+  function ensureTinyButtons() {
+    const cfgs = [
+      { anchor:'#total_grants_awarded', title:'Edit Totals',          build: buildTotalsModal },
+      { anchor:'#last_awarded_grant',   title:'Edit Last Awarded',    build: buildLastAwardedModal },
+      { anchor:'#breakdown',            title:'Edit Breakdown',       build: buildBreakdownModal },
+      { anchor:'#reports_grant_id',     title:'Edit Reports',         build: buildReportsModal },
+      { anchor:'#keywords_section',     title:'Edit Keywords',        build: buildKeywordsModal },
+    ];
+    cfgs.forEach(cfg => {
+      const anchorEl = document.querySelector(cfg.anchor);
+      const card = anchorEl?.closest('.card');
+      const header = card?.querySelector('.card-header');
+      if (!header) return;
+      header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
+      let rail = header.querySelector('.card-toolbar'); if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
+      const btn = H('button','btn btn-sm btn-light box-edit-btn d-none','Edit');
+      btn.addEventListener('click', () => openModal(cfg.title, ...cfg.build()));
+      rail.appendChild(btn);
+    });
+  }
+
+  /* ----------------------- shared modal ----------------------- */
+  let bsModal;
+  function ensureModal() {
+    if ($('#grants_modal')) return;
+    const shell = H('div','modal fade','');
+    shell.id = 'grants_modal'; shell.tabIndex = -1;
+    shell.innerHTML = `
+      <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 class="modal-title">Edit</h3>
+            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal">
+              <i class="ki-duotone ki-cross fs-2"></i>
+            </button>
+          </div>
+          <div class="modal-body"><div id="grants_modal_body"></div></div>
+          <div class="modal-footer">
+            <button id="grants_modal_save" class="btn btn-primary">Save</button>
+            <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(shell);
+    bsModal = new bootstrap.Modal(shell);
+  }
+
+  function openModal(title, bodyNode, onSave) {
+    ensureModal();
+    $('#grants_modal .modal-title').textContent = title;
+    const body = $('#grants_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+    const old = $('#grants_modal_save');
+    const neo = old.cloneNode(true);
+    old.parentNode.replaceChild(neo, old);
+    neo.addEventListener('click', async () => {
+      await onSave();
+      save();
+      renderAll();
+      bsModal.hide();
+    });
+    bsModal.show();
+  }
+
+  function labeled(title) {
+    const s = H('div','mb-6','');
+    s.appendChild(H('div','fw-bold fs-5 mb-3', title));
+    const box = H('div','p-4 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+    s.appendChild(box);
+    return {wrap:s, box};
+  }
+
+  /* ----------------------- modal builders ----------------------- */
+  function buildTotalsModal() {
+    const {wrap, box} = labeled('Totals');
+    box.innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Total Grants Awarded</label>
+          <input id="in_total_awarded" class="form-control" value="${state.totals.totalAwarded||0}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Available Budget</label>
+          <input id="in_available_budget" class="form-control" value="${state.totals.availableBudget||0}">
+        </div>
       </div>
-      <div class="h-6px bg-light rounded">
-        <div class="h-6px bg-primary rounded" style="width:${pct}%"></div>
+      <div class="form-text mt-2">Tip: These can be auto-derived from raw grants if you prefer—just leave them as-is and we can add auto mode later.</div>
+    `;
+    const onSave = () => {
+      const ta = Number($('#in_total_awarded').value||0) || 0;
+      const ab = Number($('#in_available_budget').value||0) || 0;
+      state.totals = { totalAwarded: ta, availableBudget: ab };
+    };
+    return [wrap, onSave];
+  }
+
+  function buildLastAwardedModal() {
+    const {wrap, box} = labeled('Last Awarded Grant');
+    const g = state.lastAwarded || {};
+    box.innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Title</label><input id="la_title" class="form-control" value="${g.title||''}"></div>
+        <div class="col-md-3"><label class="form-label">Grant ID</label><input id="la_id" class="form-control" value="${g.id||g.grantId||''}"></div>
+        <div class="col-md-3"><label class="form-label">Agency</label><input id="la_agency" class="form-control" value="${g.agency||''}"></div>
+
+        <div class="col-md-3"><label class="form-label">Type</label><input id="la_type" class="form-control" value="${g.type||''}"></div>
+        <div class="col-md-3"><label class="form-label">Duration</label><input id="la_duration" class="form-control" value="${g.duration||''}"></div>
+        <div class="col-md-3"><label class="form-label">Amount Awarded</label><input id="la_awarded" class="form-control" value="${g.amountAwarded||g.amount||0}"></div>
+        <div class="col-md-3"><label class="form-label">Awarded Date</label><input id="la_awardedAt" type="date" class="form-control" value="${g.awardedAt ? new Date(g.awardedAt).toISOString().slice(0,10) : ''}"></div>
+
+        <div class="col-md-3"><label class="form-label">Amount Received</label><input id="la_received" class="form-control" value="${g.amountReceived||0}"></div>
+        <div class="col-md-3"><label class="form-label">Amount Spent</label><input id="la_spent" class="form-control" value="${g.amountSpent||0}"></div>
+        <div class="col-md-6"><label class="form-label">Tags (comma-separated)</label><input id="la_tags" class="form-control" value="${(g.tags||g.keywords||[]).join(', ')}"></div>
       </div>
     `;
-    wrap.appendChild(row);
-  });
-}
-
-// Reports card
-function renderReports(){
-  const gid = document.getElementById('reports_grant_id');
-  const due = document.getElementById('reports_next_due');
-  const last= document.getElementById('reports_last_submitted');
-
-  const r = state.reports || {};
-  if (gid)  gid.textContent  = r.grantId ? String(r.grantId) : '—';
-  if (due)  due.textContent  = r.nextDue || '—';
-  if (last) last.textContent = r.lastSubmitted || '—';
-}
-
-// Keywords card
-function renderKeywords(){
-  const wrap = document.getElementById('keywords_section');
-  if(!wrap) return;
-  wrap.innerHTML = '';
-
-  if(!state.keywords?.length){
-    const badge = document.createElement('span');
-    badge.className = 'badge bg-secondary';
-    badge.textContent = '—';
-    wrap.appendChild(badge);
-    return;
+    const onSave = () => {
+      const obj = {
+        title: $('#la_title').value.trim(),
+        id: $('#la_id').value.trim() || undefined,
+        agency: $('#la_agency').value.trim() || undefined,
+        type: $('#la_type').value.trim() || undefined,
+        duration: $('#la_duration').value.trim() || undefined,
+        amountAwarded: Number($('#la_awarded').value||0)||0,
+        awardedAt: $('#la_awardedAt').value ? new Date($('#la_awardedAt').value).toISOString() : undefined,
+        amountReceived: Number($('#la_received').value||0)||0,
+        amountSpent: Number($('#la_spent').value||0)||0,
+        tags: $('#la_tags').value.split(',').map(s=>s.trim()).filter(Boolean)
+      };
+      state.lastAwarded = obj;
+    };
+    return [wrap, onSave];
   }
 
-  state.keywords.forEach(k=>{
-    const badge = document.createElement('span');
-    badge.className = 'badge bg-secondary';
-    badge.textContent = k;
-    wrap.appendChild(badge);
+  function buildBreakdownModal() {
+    const {wrap, box} = labeled('Breakdown');
+    const list = H('div','d-flex flex-column gap-2','');
+
+    const row = (label='', value='') => {
+      const r = H('div','d-flex gap-2 align-items-center','');
+      r.innerHTML = `
+        <input class="form-control" placeholder="Label" value="${label}">
+        <input class="form-control" placeholder="Amount" value="${value}">
+        <button class="btn btn-light-danger">Remove</button>`;
+      r.lastElementChild.addEventListener('click',()=>r.remove());
+      return r;
+    };
+
+    (state.breakdown?.categories||[]).forEach(c => list.appendChild(row(c.label||'', c.value||'')));
+    const add = H('button','btn btn-light mt-2','+ Add row'); add.addEventListener('click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+
+    const onSave = () => {
+      const cats=[];
+      list.querySelectorAll(':scope > div').forEach(d=>{
+        const [l,v] = d.querySelectorAll('input');
+        const label=(l.value||'').trim();
+        const value=Number(v.value||0)||0;
+        if (label) cats.push({label, value});
+      });
+      state.breakdown = { categories: cats, total: sum(cats.map(x=>x.value)) };
+    };
+    return [wrap, onSave];
+  }
+
+  function buildReportsModal() {
+    const {wrap, box} = labeled('Reports');
+    const r = state.reports || {};
+    box.innerHTML = `
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label">Grant ID</label><input id="rp_id" class="form-control" value="${r.grantId||''}"></div>
+        <div class="col-md-4"><label class="form-label">Next Due</label><input id="rp_due" type="date" class="form-control" value="${r.nextDue ? new Date(r.nextDue).toISOString().slice(0,10) : ''}"></div>
+        <div class="col-md-4"><label class="form-label">Last Submitted</label><input id="rp_last" type="date" class="form-control" value="${r.lastSubmitted ? new Date(r.lastSubmitted).toISOString().slice(0,10) : ''}"></div>
+      </div>
+    `;
+    const onSave = () => {
+      state.reports = {
+        grantId: $('#rp_id').value.trim(),
+        nextDue: $('#rp_due').value || '',
+        lastSubmitted: $('#rp_last').value || ''
+      };
+    };
+    return [wrap, onSave];
+  }
+
+  function buildKeywordsModal() {
+    const {wrap, box} = labeled('Keywords (comma or newline separated)');
+    const ta = H('textarea','form-control', (state.keywords||[]).join(', ')); ta.rows = 8;
+    box.appendChild(ta);
+    const onSave = () => {
+      state.keywords = ta.value.replace(/\n/g, ',').split(',').map(s=>s.trim()).filter(Boolean);
+    };
+    return [wrap, onSave];
+  }
+
+  /* ----------------------- boot ----------------------- */
+  document.addEventListener('DOMContentLoaded', async () => {
+    await load();
+    ensureTinyButtons();
+    wireEditToggle();
+    renderAll();
   });
-}
-
-function renderAll(){
-  renderTotals();
-  renderLastAwarded();
-  renderBreakdown();
-  renderReports();
-  renderKeywords();
-}
-
-/** ---------- boot ---------- */
-document.addEventListener('DOMContentLoaded', async ()=>{
-  await loadAll();
-  renderAll();
-});
+})();
