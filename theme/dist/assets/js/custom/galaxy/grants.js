@@ -1,275 +1,240 @@
-(function () {
-  const state = {
-    profile: {
-      name: "—",
-      photo_url: "assets/media/avatars/300-1.jpg",
-      social_media: {},
-      media_mentions: [],
-      research_areas: [],
-      awards: [],
-      patents: [],
-      mentors: [],
-      colleagues: [],
-      partners: {},
-      positions: [],
-      affiliations: [],
-      education: [],
-      memberships: []
-    }
-  };
+// theme/src/js/custom/galaxy/grants.js
 
-  // ---- globals/helpers ----
-  let editMode = false; // <— controls visibility of remove buttons & per-card Edit
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  const $on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const el = (tag, cls, html) => { const x=document.createElement(tag); if(cls)x.className=cls; if(html!=null)x.innerHTML=html; return x; };
-  const pill = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
+const API = (location.hostname === 'localhost')
+  ? 'http://127.0.0.1:3001/api'
+  : '/api';
 
-  async function loadProfile() {
-    const local = localStorage.getItem("galaxy_profile");
-    if (local) { state.profile = JSON.parse(local); return; }
-    try {
-      const res = await fetch("data/profile.json", { cache: "no-store" });
-      if (res.ok) state.profile = await res.json();
-    } catch (_) {}
-  }
-  function saveProfile(){ localStorage.setItem("galaxy_profile", JSON.stringify(state.profile)); }
+const state = {
+  // raw
+  grants: [],            // [{id,title,agency,type,amountAwarded,amountReceived,amountSpent,tags,awardedAt,...}]
+  breakdown: null,       // { categories:[{label,value}], total:number } (flexible)
+  reports: null,         // { grantId,nextDue,lastSubmitted }
+  keywords: [],          // ["nlp","genomics",...]
+  // derived
+  totals: { totalAwarded: 0, availableBudget: 0 },
+  lastAwarded: null      // grant object
+};
 
-  function updateRemoveButtonsVisibility() {
-    $$(".remove-btn").forEach(b => b.classList.toggle("d-none", !editMode));
-  }
+/** ---------- utils ---------- */
+const $ = (sel) => document.querySelector(sel);
+const sum = (arr) => arr.reduce((a,b)=>a+(Number(b)||0),0);
+const fmtMoney = (n) => (n==null ? '—' :
+  n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }));
 
-  function renderList(selector, arr) {
-    const ul = $(selector); if (!ul) return;
-    ul.innerHTML = "";
-    if (!arr?.length) { ul.innerHTML = `<li class="text-muted">—</li>`; return; }
-    arr.forEach((item, i) => {
-      const li = el("li");
-      li.innerHTML = `${item} <button class="btn btn-sm btn-light-danger ms-2 remove-btn" data-remove-list="${selector}" data-index="${i}">Remove</button>`;
-      ul.appendChild(li);
-    });
-  }
+function byDateDesc(a,b){
+  const da = new Date(a?.awardedAt || a?.date || 0).getTime();
+  const db = new Date(b?.awardedAt || b?.date || 0).getTime();
+  return db - da;
+}
 
-  function render() {
-    const p = state.profile;
+async function fetchJSON(url, opts){
+  const r = await fetch(url, opts);
+  if(!r.ok) throw new Error(`${url} -> ${r.status}`);
+  return r.json();
+}
 
-    // header/avatar
-    $("#profile_name_display").textContent = p.name || "—";
-    const wrapper = $("#avatar_wrapper");
-    if (wrapper) wrapper.style.backgroundImage = `url('${p.photo_url || "assets/media/avatars/300-1.jpg"}')`;
+/** ---------- derive helpers ---------- */
+function deriveTotals(grants){
+  const totalAwarded = sum(grants.map(g=>g.amountAwarded||g.amount||0));
+  const totalReceived = sum(grants.map(g=>g.amountReceived||0));
+  const totalSpent    = sum(grants.map(g=>g.amountSpent||0));
+  const availableBudget = Math.max(totalReceived - totalSpent, 0);
+  return { totalAwarded, availableBudget };
+}
 
-    // lists
-    renderList("#positions_list", p.positions);
-    renderList("#affiliations_list", p.affiliations);
-    renderList("#education_list", p.education);
-    renderList("#memberships_list", p.memberships);
-    renderList("#mentors_list", p.mentors);
-    renderList("#colleagues_list", p.colleagues);
+function pickLastAwarded(grants){
+  if(!grants?.length) return null;
+  const sorted = [...grants].sort(byDateDesc);
+  return sorted[0];
+}
 
-    // social media (view + editor rows)
-    const smView = $("#social_media_view");
-    if (smView) {
-      smView.innerHTML = "";
-      const keys = Object.keys(p.social_media || {});
-      if (!keys.length) smView.innerHTML = `<li class="text-muted">—</li>`;
-      keys.forEach(k => smView.appendChild(el("li", null, `<span class="fw-semibold">${k}:</span> ${p.social_media[k]}`)));
-    }
-    const smList = $("#social_media_list");
-    if (smList) {
-      smList.innerHTML = "";
-      Object.keys(p.social_media || {}).forEach(k => {
-        smList.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.social_media[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="social_media" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // research areas (chips)
-    const rtags = $("#research_areas_tags");
-    if (rtags) rtags.innerHTML = (p.research_areas || []).map(pill).join("") || `<span class="text-muted">—</span>`;
-
-    // awards
-    const aw = $("#awards_list");
-    if (aw) {
-      aw.innerHTML = "";
-      if (!p.awards?.length) aw.innerHTML = `<li class="text-muted">—</li>`;
-      (p.awards || []).forEach(a => {
-        aw.appendChild(el("li", null, `<span class="fw-semibold">${a.year||""}</span> ${a.title||""}
-          <button class="btn btn-sm btn-light-danger ms-3 remove-btn" data-remove="awards" data-year="${a.year}" data-title="${a.title}">Remove</button>`));
-      });
-    }
-
-    // patents
-    const pl = $("#patents_list");
-    if (pl) {
-      pl.innerHTML = "";
-      if (!p.patents?.length) pl.innerHTML = `<li class="text-muted">—</li>`;
-      (p.patents || []).forEach((pt, idx) => {
-        const color = (pt.status||"").toLowerCase()==="pending" ? "text-warning" : "text-success";
-        pl.appendChild(el("li","mb-3",`
-          <div class="fw-semibold">${pt.title||""}</div>
-          <div>No: ${pt.number||""}</div>
-          <div>Inventors: ${(pt.inventors||[]).join(", ")}</div>
-          <div>Filed: ${pt.filed||""}</div>
-          <div class="${color}">● ${pt.status||""}</div>
-          <button class="btn btn-sm btn-light-danger mt-1 remove-btn" data-remove="patents" data-index="${idx}">Remove</button>`));
-      });
-    }
-
-    // partners
-    const pv = $("#partners_view");
-    if (pv) {
-      pv.innerHTML = "";
-      const pk = Object.keys(p.partners||{});
-      if (!pk.length) pv.innerHTML = `<li class="text-muted">—</li>`;
-      pk.forEach(k => pv.appendChild(el("li", null, `<span class="fw-semibold">${p.partners[k]}</span> ${k}`)));
-    }
-    const plst = $("#partners_list");
-    if (plst) {
-      plst.innerHTML = "";
-      Object.keys(p.partners||{}).forEach(k => {
-        plst.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.partners[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="partners" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // finally, sync remove buttons visibility with current mode
-    updateRemoveButtonsVisibility();
-  }
-
-  // editors / events
-  function wireEditors() {
-    // adders
-    const addList = (inputSel, key) => {
-      const v = $(inputSel)?.value.trim(); if (!v) return;
-      (state.profile[key] ||= []).push(v); $(inputSel).value=""; saveProfile(); render();
-    };
-    $on($("[data-add='positions']"), "click", () => addList("#positions_input","positions"));
-    $on($("[data-add='affiliations']"), "click", () => addList("#affiliations_input","affiliations"));
-    $on($("[data-add='media_mentions']"), "click", () => addList("#media_mentions_input","media_mentions"));
-    $on($("[data-add='mentors']"), "click", () => addList("#mentors_input","mentors"));
-    $on($("[data-add='colleagues']"), "click", () => addList("#colleagues_input","colleagues"));
-    $on($("[data-add='education']"), "click", () => addList("#education_input","education"));
-    $on($("[data-add='memberships']"), "click", () => addList("#memberships_input","memberships"));
-
-    $on($("[data-add='social_media']"), "click", () => {
-      const k=$("#sm_key")?.value.trim(), v=$("#sm_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.social_media ||= {})[k]=v; $("#sm_key").value=""; $("#sm_val").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='partners']"), "click", () => {
-      const k=$("#partner_key")?.value.trim(), v=$("#partner_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.partners ||= {})[k]=v; $("#partner_key").value=""; $("#partner_val").value="";
-      saveProfile(); render();
-    });
-
-    $on($("[data-add='awards']"), "click", () => {
-      const year=$("#award_year")?.value.trim(), title=$("#award_title")?.value.trim(); if(!year||!title) return;
-      (state.profile.awards ||= []).push({year,title}); $("#award_year").value=""; $("#award_title").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='patents']"), "click", () => {
-      const title=$("#pat_title")?.value.trim(); if(!title) return;
-      const number=$("#pat_number")?.value.trim();
-      const inventors=($("#pat_inventors")?.value||"").split(",").map(s=>s.trim()).filter(Boolean);
-      const filed=$("#pat_filed")?.value.trim(); const status=$("#pat_status")?.value;
-      (state.profile.patents ||= []).push({title, number, inventors, filed, status});
-      ["#pat_title","#pat_number","#pat_inventors","#pat_filed"].forEach(s=>$(s).value="");
-      saveProfile(); render();
-    });
-
-    // generic removes
-    document.addEventListener("click", (e) => {
-      const t = e.target; if (!(t instanceof HTMLElement)) return;
-
-      if (t.hasAttribute("data-remove-list")) {
-        const sel = t.getAttribute("data-remove-list");
-        const idx = +t.getAttribute("data-index");
-        const map = {
-          "#positions_list":"positions","#affiliations_list":"affiliations",
-          "#media_mentions_list":"media_mentions","#mentors_list":"mentors",
-          "#colleagues_list":"colleagues","#education_list":"education","#memberships_list":"memberships"
-        };
-        const key = map[sel]; if (!key) return;
-        state.profile[key].splice(idx,1); saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="social_media") {
-        delete state.profile.social_media[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="partners") {
-        delete state.profile.partners[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="awards") {
-        const y=t.getAttribute("data-year"), ti=t.getAttribute("data-title");
-        state.profile.awards = (state.profile.awards||[]).filter(a=>!(a.year===y && a.title===ti));
-        saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="patents") {
-        const idx = +t.getAttribute("data-index");
-        state.profile.patents.splice(idx,1); saveProfile(); render();
-      }
-    });
-
-    // avatar preview
-    $on($("#photo_input"), "change", (e) => {
-      const f = e.target.files?.[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        state.profile.photo_url = r.result;
-        const wrap = $("#avatar_wrapper");
-        if (wrap) wrap.style.backgroundImage = `url('${state.profile.photo_url}')`;
-        saveProfile();
-      };
-      r.readAsDataURL(f);
-    });
-
-    // per-card edit buttons toggle editor visibility
-    $$(".box-edit-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const targets = (btn.getAttribute("data-edit-target") || "").split(",").map(s => s.trim()).filter(Boolean);
-        targets.forEach(sel => { const ed = $(sel); if (ed) ed.classList.toggle("d-none"); });
-      });
-    });
-
-    // global edit toggle
-    const setEditMode = (on) => {
-      editMode = on;
-      const btn = $("#editToggle"); if (btn) btn.textContent = on ? "Done" : "Edit";
-      $$(".box-edit-btn").forEach(b => b.classList.toggle("d-none", !on));
-      if (!on) { $$(".editor").forEach(ed => ed.classList.add("d-none")); }
-      updateRemoveButtonsVisibility();
-    };
-    $on($("#editToggle"), "click", () => setEditMode(!editMode));
-    setEditMode(false); // start off
-  }
-
-  // Tagify
-  function initTagify() {
-    const input = $("#research_areas_tagify");
-    if (!input || !window.Tagify) return;
-    const tagify = new Tagify(input, {
-      originalInputValueFormat: (values) => values.map(v => v.value).join(", ")
-    });
-    tagify.addTags(state.profile.research_areas || []);
-    const sync = () => {
-      state.profile.research_areas = tagify.value.map(t => t.value);
-      saveProfile();
-      const rtags = $("#research_areas_tags");
-      if (rtags) rtags.innerHTML =
-        (state.profile.research_areas || []).map(t => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`).join("")
-        || `<span class="text-muted">—</span>`;
-    };
-    tagify.on("add", sync); tagify.on("remove", sync); tagify.on("blur", sync);
-  }
-
-  document.addEventListener("DOMContentLoaded", async () => {
-    await loadProfile();
-    wireEditors();
-    initTagify();
-    render();
+function deriveKeywords(grants){
+  const set = new Set();
+  (grants||[]).forEach(g=>{
+    (g.tags||g.keywords||[]).forEach(t=>set.add(t));
   });
-})();
+  return [...set].slice(0, 20);
+}
+
+/** ---------- data loading ---------- */
+async function loadFromAPI(){
+  // Expected (but optional) endpoints:
+  //   GET /api/grants                 -> { grants:[...] }
+  //   GET /api/grants/summary         -> { totalAwarded, availableBudget, lastAwarded:{...}? }
+  //   GET /api/grants/breakdown       -> { categories:[{label,value}], total:number } (or any shape you like)
+  //   GET /api/grants/reports         -> { grantId,nextDue,lastSubmitted }
+  //   GET /api/grants/keywords        -> { keywords:[...] }
+  const [grantsP, summaryP, breakdownP, reportsP, keywordsP] = await Promise.allSettled([
+    fetchJSON(`${API}/grants`),
+    fetchJSON(`${API}/grants/summary`),
+    fetchJSON(`${API}/grants/breakdown`),
+    fetchJSON(`${API}/grants/reports`),
+    fetchJSON(`${API}/grants/keywords`)
+  ]);
+
+  const grants = grantsP.status==='fulfilled'
+    ? (grantsP.value.grants || grantsP.value || [])
+    : [];
+
+  const summary = summaryP.status==='fulfilled' ? summaryP.value : null;
+  const totals = summary?.totalAwarded!=null && summary?.availableBudget!=null
+    ? { totalAwarded: summary.totalAwarded, availableBudget: summary.availableBudget }
+    : deriveTotals(grants);
+  const lastAwarded = summary?.lastAwarded || pickLastAwarded(grants);
+
+  const breakdown = breakdownP.status==='fulfilled' ? (breakdownP.value || null) : null;
+  const reports   = reportsP.status==='fulfilled'   ? (reportsP.value || null)   : null;
+  const keywords  = keywordsP.status==='fulfilled'
+    ? (keywordsP.value.keywords || keywordsP.value || [])
+    : deriveKeywords(grants);
+
+  return { grants, totals, lastAwarded, breakdown, reports, keywords };
+}
+
+async function loadFromStatic(){
+  // Fallback seed at theme/dist/data/grants.json (copy from src/data via CopyWebpackPlugin)
+  const data = await fetchJSON('data/grants.json').catch(()=> ({}));
+  const grants     = data.grants || data || [];
+  const totals     = data.totals || deriveTotals(grants);
+  const lastAwarded= data.lastAwarded || pickLastAwarded(grants);
+  const breakdown  = data.breakdown || null;
+  const reports    = data.reports || null;
+  const keywords   = data.keywords || deriveKeywords(grants);
+  return { grants, totals, lastAwarded, breakdown, reports, keywords };
+}
+
+async function loadAll(){
+  try {
+    const d = await loadFromAPI();
+    Object.assign(state, d);
+    return;
+  } catch(e){
+    console.warn('[grants] API failed, using static:', e);
+  }
+  try {
+    const d = await loadFromStatic();
+    Object.assign(state, d);
+  } catch(e){
+    console.error('[grants] No data available:', e);
+  }
+}
+
+/** ---------- renderers ---------- */
+
+// Stat tiles
+function renderTotals(){
+  const totalEl = document.getElementById('total_grants_awarded');
+  const availEl = document.getElementById('available_budget');
+  if (totalEl) totalEl.textContent = fmtMoney(state.totals.totalAwarded);
+  if (availEl) availEl.textContent = fmtMoney(state.totals.availableBudget);
+}
+
+// Last Awarded Grant card
+function renderLastAwarded(){
+  const ul = document.getElementById('last_awarded_grant');
+  if(!ul) return;
+  ul.innerHTML = '';
+
+  const g = state.lastAwarded;
+  if(!g){
+    ul.innerHTML = `<li class="text-gray-400">—</li>`;
+    return;
+  }
+
+  const rows = [
+    ['Title', g.title],
+    ['Grant ID', g.id || g.grantId],
+    ['Agency', g.agency],
+    ['Type', g.type],
+    ['Duration', g.duration],
+    ['Amount Awarded', fmtMoney(g.amountAwarded || g.amount)],
+    ['Amount Received', fmtMoney(g.amountReceived)],
+    ['Amount Spent', fmtMoney(g.amountSpent)],
+    ['Tags', (g.tags||g.keywords||[]).map(t=>`<span class="badge bg-secondary me-1 mb-1">${t}</span>`).join(' ')]
+  ];
+
+  rows.forEach(([k,v])=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<strong>${k}:</strong> ${v!=null && v!=='' ? v : '—'}`;
+    ul.appendChild(li);
+  });
+}
+
+// Breakdown card
+function renderBreakdown(){
+  const wrap = document.getElementById('breakdown');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+
+  const b = state.breakdown;
+  if(!b || !Array.isArray(b.categories) || !b.categories.length){
+    wrap.textContent = '—';
+    return;
+  }
+
+  // Simple text bars (no external chart lib)
+  const total = b.total || sum(b.categories.map(c=>Number(c.value)||0)) || 1;
+  b.categories.forEach(cat=>{
+    const pct = Math.round((Number(cat.value||0)/total)*100);
+    const row = document.createElement('div');
+    row.className = 'mb-3';
+    row.innerHTML = `
+      <div class="d-flex justify-content-between">
+        <span class="text-gray-300">${cat.label}</span>
+        <span class="text-gray-300">${fmtMoney(cat.value)} · ${pct}%</span>
+      </div>
+      <div class="h-6px bg-light rounded">
+        <div class="h-6px bg-primary rounded" style="width:${pct}%"></div>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+}
+
+// Reports card
+function renderReports(){
+  const gid = document.getElementById('reports_grant_id');
+  const due = document.getElementById('reports_next_due');
+  const last= document.getElementById('reports_last_submitted');
+
+  const r = state.reports || {};
+  if (gid)  gid.textContent  = r.grantId ? String(r.grantId) : '—';
+  if (due)  due.textContent  = r.nextDue || '—';
+  if (last) last.textContent = r.lastSubmitted || '—';
+}
+
+// Keywords card
+function renderKeywords(){
+  const wrap = document.getElementById('keywords_section');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+
+  if(!state.keywords?.length){
+    const badge = document.createElement('span');
+    badge.className = 'badge bg-secondary';
+    badge.textContent = '—';
+    wrap.appendChild(badge);
+    return;
+  }
+
+  state.keywords.forEach(k=>{
+    const badge = document.createElement('span');
+    badge.className = 'badge bg-secondary';
+    badge.textContent = k;
+    wrap.appendChild(badge);
+  });
+}
+
+function renderAll(){
+  renderTotals();
+  renderLastAwarded();
+  renderBreakdown();
+  renderReports();
+  renderKeywords();
+}
+
+/** ---------- boot ---------- */
+document.addEventListener('DOMContentLoaded', async ()=>{
+  await loadAll();
+  renderAll();
+});

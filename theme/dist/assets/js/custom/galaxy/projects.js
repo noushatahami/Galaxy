@@ -1,275 +1,347 @@
-(function () {
-  const state = {
-    profile: {
-      name: "—",
-      photo_url: "assets/media/avatars/300-1.jpg",
-      social_media: {},
-      media_mentions: [],
-      research_areas: [],
-      awards: [],
-      patents: [],
-      mentors: [],
-      colleagues: [],
-      partners: {},
-      positions: [],
-      affiliations: [],
-      education: [],
-      memberships: []
-    }
-  };
+// theme/src/js/custom/galaxy/projects.js
+// Renders: Total Impact Points, Total Budget, Projects, Project Snapshot,
+// Latest Activity, Messages, Next Deadline. Tries API first, falls back to static.
 
-  // ---- globals/helpers ----
-  let editMode = false; // <— controls visibility of remove buttons & per-card Edit
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-  const $on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const el = (tag, cls, html) => { const x=document.createElement(tag); if(cls)x.className=cls; if(html!=null)x.innerHTML=html; return x; };
-  const pill = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
+const API = (location.hostname === 'localhost')
+  ? 'http://127.0.0.1:3001/api'
+  : '/api';
 
-  async function loadProfile() {
-    const local = localStorage.getItem("galaxy_profile");
-    if (local) { state.profile = JSON.parse(local); return; }
-    try {
-      const res = await fetch("data/profile.json", { cache: "no-store" });
-      if (res.ok) state.profile = await res.json();
-    } catch (_) {}
-  }
-  function saveProfile(){ localStorage.setItem("galaxy_profile", JSON.stringify(state.profile)); }
+const state = {
+  summary: { impactTotal: 0, impactChange: '', impactNote: '', budgetAmount: 0, budgetChange: '', budgetNote: '' },
+  projects: [],          // [{id,title,status,tags,owner,progress,days,desc,...}]
+  counts: { active: 0, on_hold: 0, stopped: 0 },
+  snapshot: null,        // { title, status, days, desc, tags[], donutPercent, members[] }
+  latest: [],            // [{user,name,avatar,what,when}]
+  messages: [],          // [{from, avatar, text, when}]
+  nextDeadline: null     // { label, date }
+};
 
-  function updateRemoveButtonsVisibility() {
-    $$(".remove-btn").forEach(b => b.classList.toggle("d-none", !editMode));
-  }
+/* ---------------- utils ---------------- */
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const sum = (a) => a.reduce((x,y)=>x+y,0);
+const fmtMoney = (n) => (n==null ? '—' : n.toLocaleString(undefined,{style:'currency',currency:'USD',maximumFractionDigits:0}));
 
-  function renderList(selector, arr) {
-    const ul = $(selector); if (!ul) return;
-    ul.innerHTML = "";
-    if (!arr?.length) { ul.innerHTML = `<li class="text-muted">—</li>`; return; }
-    arr.forEach((item, i) => {
-      const li = el("li");
-      li.innerHTML = `${item} <button class="btn btn-sm btn-light-danger ms-2 remove-btn" data-remove-list="${selector}" data-index="${i}">Remove</button>`;
-      ul.appendChild(li);
-    });
-  }
+const STATUS_COLORS = {
+  Active:  '#20E3B2',   // emerald
+  'On Hold': '#F5A623', // amber
+  Stopped: '#A0A0A0'    // gray
+};
 
-  function render() {
-    const p = state.profile;
-
-    // header/avatar
-    $("#profile_name_display").textContent = p.name || "—";
-    const wrapper = $("#avatar_wrapper");
-    if (wrapper) wrapper.style.backgroundImage = `url('${p.photo_url || "assets/media/avatars/300-1.jpg"}')`;
-
-    // lists
-    renderList("#positions_list", p.positions);
-    renderList("#affiliations_list", p.affiliations);
-    renderList("#education_list", p.education);
-    renderList("#memberships_list", p.memberships);
-    renderList("#mentors_list", p.mentors);
-    renderList("#colleagues_list", p.colleagues);
-
-    // social media (view + editor rows)
-    const smView = $("#social_media_view");
-    if (smView) {
-      smView.innerHTML = "";
-      const keys = Object.keys(p.social_media || {});
-      if (!keys.length) smView.innerHTML = `<li class="text-muted">—</li>`;
-      keys.forEach(k => smView.appendChild(el("li", null, `<span class="fw-semibold">${k}:</span> ${p.social_media[k]}`)));
-    }
-    const smList = $("#social_media_list");
-    if (smList) {
-      smList.innerHTML = "";
-      Object.keys(p.social_media || {}).forEach(k => {
-        smList.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.social_media[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="social_media" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // research areas (chips)
-    const rtags = $("#research_areas_tags");
-    if (rtags) rtags.innerHTML = (p.research_areas || []).map(pill).join("") || `<span class="text-muted">—</span>`;
-
-    // awards
-    const aw = $("#awards_list");
-    if (aw) {
-      aw.innerHTML = "";
-      if (!p.awards?.length) aw.innerHTML = `<li class="text-muted">—</li>`;
-      (p.awards || []).forEach(a => {
-        aw.appendChild(el("li", null, `<span class="fw-semibold">${a.year||""}</span> ${a.title||""}
-          <button class="btn btn-sm btn-light-danger ms-3 remove-btn" data-remove="awards" data-year="${a.year}" data-title="${a.title}">Remove</button>`));
-      });
-    }
-
-    // patents
-    const pl = $("#patents_list");
-    if (pl) {
-      pl.innerHTML = "";
-      if (!p.patents?.length) pl.innerHTML = `<li class="text-muted">—</li>`;
-      (p.patents || []).forEach((pt, idx) => {
-        const color = (pt.status||"").toLowerCase()==="pending" ? "text-warning" : "text-success";
-        pl.appendChild(el("li","mb-3",`
-          <div class="fw-semibold">${pt.title||""}</div>
-          <div>No: ${pt.number||""}</div>
-          <div>Inventors: ${(pt.inventors||[]).join(", ")}</div>
-          <div>Filed: ${pt.filed||""}</div>
-          <div class="${color}">● ${pt.status||""}</div>
-          <button class="btn btn-sm btn-light-danger mt-1 remove-btn" data-remove="patents" data-index="${idx}">Remove</button>`));
-      });
-    }
-
-    // partners
-    const pv = $("#partners_view");
-    if (pv) {
-      pv.innerHTML = "";
-      const pk = Object.keys(p.partners||{});
-      if (!pk.length) pv.innerHTML = `<li class="text-muted">—</li>`;
-      pk.forEach(k => pv.appendChild(el("li", null, `<span class="fw-semibold">${p.partners[k]}</span> ${k}`)));
-    }
-    const plst = $("#partners_list");
-    if (plst) {
-      plst.innerHTML = "";
-      Object.keys(p.partners||{}).forEach(k => {
-        plst.appendChild(el("div","d-flex align-items-center gap-2 mb-2",`
-          <input class="form-control form-control-sm" value="${k}" data-k="k">
-          <input class="form-control form-control-sm" value="${p.partners[k]}" data-k="v">
-          <button class="btn btn-sm btn-light-danger remove-btn" data-remove="partners" data-key="${k}">Remove</button>`));
-      });
-    }
-
-    // finally, sync remove buttons visibility with current mode
-    updateRemoveButtonsVisibility();
-  }
-
-  // editors / events
-  function wireEditors() {
-    // adders
-    const addList = (inputSel, key) => {
-      const v = $(inputSel)?.value.trim(); if (!v) return;
-      (state.profile[key] ||= []).push(v); $(inputSel).value=""; saveProfile(); render();
-    };
-    $on($("[data-add='positions']"), "click", () => addList("#positions_input","positions"));
-    $on($("[data-add='affiliations']"), "click", () => addList("#affiliations_input","affiliations"));
-    $on($("[data-add='media_mentions']"), "click", () => addList("#media_mentions_input","media_mentions"));
-    $on($("[data-add='mentors']"), "click", () => addList("#mentors_input","mentors"));
-    $on($("[data-add='colleagues']"), "click", () => addList("#colleagues_input","colleagues"));
-    $on($("[data-add='education']"), "click", () => addList("#education_input","education"));
-    $on($("[data-add='memberships']"), "click", () => addList("#memberships_input","memberships"));
-
-    $on($("[data-add='social_media']"), "click", () => {
-      const k=$("#sm_key")?.value.trim(), v=$("#sm_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.social_media ||= {})[k]=v; $("#sm_key").value=""; $("#sm_val").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='partners']"), "click", () => {
-      const k=$("#partner_key")?.value.trim(), v=$("#partner_val")?.value.trim(); if(!k||!v) return;
-      (state.profile.partners ||= {})[k]=v; $("#partner_key").value=""; $("#partner_val").value="";
-      saveProfile(); render();
-    });
-
-    $on($("[data-add='awards']"), "click", () => {
-      const year=$("#award_year")?.value.trim(), title=$("#award_title")?.value.trim(); if(!year||!title) return;
-      (state.profile.awards ||= []).push({year,title}); $("#award_year").value=""; $("#award_title").value="";
-      saveProfile(); render();
-    });
-    $on($("[data-add='patents']"), "click", () => {
-      const title=$("#pat_title")?.value.trim(); if(!title) return;
-      const number=$("#pat_number")?.value.trim();
-      const inventors=($("#pat_inventors")?.value||"").split(",").map(s=>s.trim()).filter(Boolean);
-      const filed=$("#pat_filed")?.value.trim(); const status=$("#pat_status")?.value;
-      (state.profile.patents ||= []).push({title, number, inventors, filed, status});
-      ["#pat_title","#pat_number","#pat_inventors","#pat_filed"].forEach(s=>$(s).value="");
-      saveProfile(); render();
-    });
-
-    // generic removes
-    document.addEventListener("click", (e) => {
-      const t = e.target; if (!(t instanceof HTMLElement)) return;
-
-      if (t.hasAttribute("data-remove-list")) {
-        const sel = t.getAttribute("data-remove-list");
-        const idx = +t.getAttribute("data-index");
-        const map = {
-          "#positions_list":"positions","#affiliations_list":"affiliations",
-          "#media_mentions_list":"media_mentions","#mentors_list":"mentors",
-          "#colleagues_list":"colleagues","#education_list":"education","#memberships_list":"memberships"
-        };
-        const key = map[sel]; if (!key) return;
-        state.profile[key].splice(idx,1); saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="social_media") {
-        delete state.profile.social_media[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="partners") {
-        delete state.profile.partners[t.getAttribute("data-key")]; saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="awards") {
-        const y=t.getAttribute("data-year"), ti=t.getAttribute("data-title");
-        state.profile.awards = (state.profile.awards||[]).filter(a=>!(a.year===y && a.title===ti));
-        saveProfile(); render();
-      }
-      if (t.getAttribute("data-remove")==="patents") {
-        const idx = +t.getAttribute("data-index");
-        state.profile.patents.splice(idx,1); saveProfile(); render();
-      }
-    });
-
-    // avatar preview
-    $on($("#photo_input"), "change", (e) => {
-      const f = e.target.files?.[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = () => {
-        state.profile.photo_url = r.result;
-        const wrap = $("#avatar_wrapper");
-        if (wrap) wrap.style.backgroundImage = `url('${state.profile.photo_url}')`;
-        saveProfile();
-      };
-      r.readAsDataURL(f);
-    });
-
-    // per-card edit buttons toggle editor visibility
-    $$(".box-edit-btn").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const targets = (btn.getAttribute("data-edit-target") || "").split(",").map(s => s.trim()).filter(Boolean);
-        targets.forEach(sel => { const ed = $(sel); if (ed) ed.classList.toggle("d-none"); });
-      });
-    });
-
-    // global edit toggle
-    const setEditMode = (on) => {
-      editMode = on;
-      const btn = $("#editToggle"); if (btn) btn.textContent = on ? "Done" : "Edit";
-      $$(".box-edit-btn").forEach(b => b.classList.toggle("d-none", !on));
-      if (!on) { $$(".editor").forEach(ed => ed.classList.add("d-none")); }
-      updateRemoveButtonsVisibility();
-    };
-    $on($("#editToggle"), "click", () => setEditMode(!editMode));
-    setEditMode(false); // start off
-  }
-
-  // Tagify
-  function initTagify() {
-    const input = $("#research_areas_tagify");
-    if (!input || !window.Tagify) return;
-    const tagify = new Tagify(input, {
-      originalInputValueFormat: (values) => values.map(v => v.value).join(", ")
-    });
-    tagify.addTags(state.profile.research_areas || []);
-    const sync = () => {
-      state.profile.research_areas = tagify.value.map(t => t.value);
-      saveProfile();
-      const rtags = $("#research_areas_tags");
-      if (rtags) rtags.innerHTML =
-        (state.profile.research_areas || []).map(t => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`).join("")
-        || `<span class="text-muted">—</span>`;
-    };
-    tagify.on("add", sync); tagify.on("remove", sync); tagify.on("blur", sync);
-  }
-
-  document.addEventListener("DOMContentLoaded", async () => {
-    await loadProfile();
-    wireEditors();
-    initTagify();
-    render();
+/* ---------------- derives ---------------- */
+function deriveCounts(projects){
+  const c = { active:0, on_hold:0, stopped:0 };
+  (projects||[]).forEach(p=>{
+    const s = (p.status||'').toLowerCase();
+    if (s === 'active') c.active++;
+    else if (s === 'on hold' || s === 'on_hold') c.on_hold++;
+    else c.stopped++;
   });
-})();
+  return c;
+}
+
+function defaultSnapshot(projects){
+  if (!projects?.length) return {
+    title:'—', status:'Active', days:0, desc:'—', tags:[], donutPercent:0, members:[]
+  };
+  const p = [...projects].sort((a,b)=>(b?.progress||0)-(a?.progress||0))[0];
+  return {
+    title: p.title || '—',
+    status: p.status || 'Active',
+    days: p.days || 0,
+    desc: p.desc || p.description || '—',
+    tags: p.tags || [],
+    donutPercent: Math.max(0, Math.min(100, Number(p.progress||0))),
+    members: p.members || []
+  };
+}
+
+/* ---------------- data loading ---------------- */
+async function fetchJSON(url, opts){
+  const r = await fetch(url, opts);
+  if (!r.ok) throw new Error(`${url} -> ${r.status}`);
+  return r.json();
+}
+
+async function loadFromAPI(){
+  // Optional endpoints your API can expose:
+  // GET /api/projects                -> { projects:[...] , summary? }
+  // GET /api/projects/summary        -> { impactTotal, impactChange, impactNote, budgetAmount, budgetChange, budgetNote }
+  // GET /api/projects/snapshot       -> { ...snapshot }
+  // GET /api/projects/latest         -> { items:[...] }
+  // GET /api/projects/messages       -> { items:[...] }
+  // GET /api/projects/next-deadline  -> { label, date }
+  const [projectsP, summaryP, snapshotP, latestP, messagesP, deadlineP] = await Promise.allSettled([
+    fetchJSON(`${API}/projects`),
+    fetchJSON(`${API}/projects/summary`),
+    fetchJSON(`${API}/projects/snapshot`),
+    fetchJSON(`${API}/projects/latest`),
+    fetchJSON(`${API}/projects/messages`),
+    fetchJSON(`${API}/projects/next-deadline`)
+  ]);
+
+  const projects = projectsP.status==='fulfilled'
+    ? (projectsP.value.projects || projectsP.value || [])
+    : [];
+
+  const summary = summaryP.status==='fulfilled'
+    ? (summaryP.value || {})
+    : (projectsP.status==='fulfilled' && projectsP.value.summary) ? projectsP.value.summary : {};
+
+  const snapshot = snapshotP.status==='fulfilled'
+    ? (snapshotP.value || null)
+    : defaultSnapshot(projects);
+
+  const latest    = latestP.status==='fulfilled'   ? (latestP.value.items || latestP.value || []) : [];
+  const messages  = messagesP.status==='fulfilled' ? (messagesP.value.items || messagesP.value || []) : [];
+  const nextDeadline = deadlineP.status==='fulfilled' ? (deadlineP.value || null) : null;
+
+  return { projects, summary, snapshot, latest, messages, nextDeadline };
+}
+
+async function loadFromStatic(){
+  // Place seed at: theme/src/data/projects.json → copied to theme/dist/data/projects.json
+  const data = await fetchJSON('data/projects.json').catch(() => ({}));
+
+  const projects = data.projects || [];
+  const summary = data.summary || {};
+  const snapshot = data.snapshot || defaultSnapshot(projects);
+  const latest = data.latest || [];
+  const messages = data.messages || [];
+  const nextDeadline = data.nextDeadline || null;
+
+  return { projects, summary, snapshot, latest, messages, nextDeadline };
+}
+
+async function loadAll(){
+  try {
+    const d = await loadFromAPI();
+    Object.assign(state, d);
+  } catch(e){
+    console.warn('[projects] API failed, using static', e);
+    const d = await loadFromStatic();
+    Object.assign(state, d);
+  }
+  state.counts = deriveCounts(state.projects);
+}
+
+/* ---------------- renderers ---------------- */
+function renderSummary(){
+  const s = state.summary || {};
+  const impactTotal = document.getElementById('impact_total');
+  const impactChange = document.getElementById('impact_change');
+  const impactNote = document.getElementById('impact_note');
+
+  const budgetAmount = document.getElementById('budget_amount');
+  const budgetChange = document.getElementById('budget_change');
+  const budgetNote = document.getElementById('budget_note');
+
+  if (impactTotal)  impactTotal.textContent  = String(s.impactTotal ?? '—');
+  if (impactChange) impactChange.textContent = s.impactChange || '';
+  if (impactNote)   impactNote.textContent   = s.impactNote || '';
+
+  if (budgetAmount) budgetAmount.textContent = fmtMoney(s.budgetAmount ?? 0);
+  if (budgetChange) budgetChange.textContent = s.budgetChange || '';
+  if (budgetNote)   budgetNote.textContent   = s.budgetNote || '';
+}
+
+function renderProjectsList(){
+  const wrap = document.getElementById('projects_list');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  // legend counts
+  const elActive = document.getElementById('count_active');
+  const elHold   = document.getElementById('count_on_hold');
+  const elStop   = document.getElementById('count_stopped');
+  if (elActive) elActive.textContent = `(${state.counts.active})`;
+  if (elHold)   elHold.textContent   = `(${state.counts.on_hold})`;
+  if (elStop)   elStop.textContent   = `(${state.counts.stopped})`;
+
+  if (!state.projects?.length){
+    wrap.innerHTML = `<div class="text-gray-400">—</div>`;
+    return;
+  }
+
+  state.projects.forEach(p=>{
+    const col = document.createElement('div');
+    col.className = 'col-sm-6';
+
+    const card = document.createElement('div');
+    card.className = 'px-3 py-2 rounded bg-body-secondary d-flex align-items-center justify-content-between';
+
+    const left = document.createElement('div');
+    left.className = 'd-flex align-items-center gap-2';
+
+    const dot = document.createElement('span');
+    dot.textContent = '●';
+    dot.style.color = STATUS_COLORS[p.status] || '#A0A0A0';
+
+    const title = document.createElement('span');
+    title.className = 'fw-semibold';
+    title.textContent = p.title || 'Untitled';
+
+    left.appendChild(dot);
+    left.appendChild(title);
+
+    const right = document.createElement('span');
+    right.className = 'badge badge-light-primary';
+    const pct = Number(p.progress || 0);
+    right.textContent = isFinite(pct) ? `${pct}%` : '—';
+
+    card.appendChild(left);
+    card.appendChild(right);
+    col.appendChild(card);
+    wrap.appendChild(col);
+  });
+}
+
+function renderSnapshot(){
+  const s = state.snapshot || defaultSnapshot(state.projects);
+
+  const statusDot = document.getElementById('snapshot_status_dot');
+  const statusTxt = document.getElementById('snapshot_status');
+  const days      = document.getElementById('snapshot_days');
+  const title     = document.getElementById('snapshot_title');
+  const desc      = document.getElementById('snapshot_desc');
+  const tagsWrap  = document.getElementById('snapshot_tags');
+  const donut     = document.getElementById('snapshot_donut');
+
+  if (statusDot) statusDot.style.color = STATUS_COLORS[s.status] || '#A0A0A0';
+  if (statusTxt) statusTxt.textContent = s.status || '—';
+  if (days)      days.textContent      = String(s.days ?? 0);
+  if (title)     title.textContent     = s.title || '—';
+  if (desc)      desc.textContent      = s.desc || '—';
+
+  if (tagsWrap) {
+    tagsWrap.innerHTML = '';
+    (s.tags || []).forEach(t=>{
+      const pill = document.createElement('span');
+      pill.className = 'badge badge-light';
+      pill.textContent = t;
+      tagsWrap.appendChild(pill);
+    });
+    if (!(s.tags||[]).length){
+      const m = document.createElement('span');
+      m.className = 'text-gray-400';
+      m.textContent = '—';
+      tagsWrap.appendChild(m);
+    }
+  }
+
+  if (donut) donut.textContent = isFinite(s.donutPercent) ? `${Math.round(s.donutPercent)}%` : '—';
+}
+
+function renderLatest(){
+  const list = document.getElementById('latest_activity_list');
+  if (!list) return;
+  list.innerHTML = '';
+
+  if (!state.latest?.length){
+    list.innerHTML = `<div class="text-gray-400">—</div>`;
+    return;
+  }
+
+  state.latest.forEach(item=>{
+    const row = document.createElement('div');
+    row.className = 'd-flex align-items-center justify-content-between';
+
+    const left = document.createElement('div');
+    left.className = 'd-flex align-items-center gap-3';
+
+    const sym = document.createElement('div');
+    sym.className = 'symbol symbol-35px';
+    const img = document.createElement('img');
+    img.src = item.avatar || 'assets/media/avatars/blank.png';
+    img.alt = '';
+    sym.appendChild(img);
+
+    const meta = document.createElement('div');
+    const name = document.createElement('div');
+    name.className = 'fw-semibold';
+    name.textContent = item.name || item.user || '—';
+
+    const what = document.createElement('div');
+    what.className = 'text-gray-300 fs-8';
+    what.textContent = item.what || '';
+
+    meta.appendChild(name);
+    meta.appendChild(what);
+
+    left.appendChild(sym);
+    left.appendChild(meta);
+
+    const when = document.createElement('span');
+    when.className = 'text-gray-500 fs-8';
+    when.textContent = item.when || '';
+
+    row.appendChild(left);
+    row.appendChild(when);
+    list.appendChild(row);
+  });
+}
+
+function renderMessages(){
+  const first = document.getElementById('messages_first');
+  if (!first) return;
+  first.innerHTML = '';
+
+  if (!state.messages?.length){
+    first.innerHTML = `<div class="text-gray-400">—</div>`;
+    return;
+  }
+
+  const m = state.messages[0];
+  const box = document.createElement('div');
+  box.className = 'd-flex align-items-start gap-3';
+
+  const sym = document.createElement('div');
+  sym.className = 'symbol symbol-35px';
+  const img = document.createElement('img');
+  img.src = m.avatar || 'assets/media/avatars/blank.png';
+  img.alt = '';
+  sym.appendChild(img);
+
+  const body = document.createElement('div');
+  const who = document.createElement('div');
+  who.className = 'fw-semibold';
+  who.textContent = m.from || '—';
+  const text = document.createElement('div');
+  text.className = 'text-gray-300';
+  text.textContent = m.text || '—';
+  const when = document.createElement('div');
+  when.className = 'text-gray-500 fs-8';
+  when.textContent = m.when || '';
+
+  body.appendChild(who);
+  body.appendChild(text);
+  body.appendChild(when);
+
+  box.appendChild(sym);
+  box.appendChild(body);
+  first.appendChild(box);
+}
+
+function renderDeadline(){
+  const label = document.getElementById('deadline_label');
+  const date  = document.getElementById('deadline_date');
+
+  const d = state.nextDeadline || {};
+  if (label) label.textContent = d.label || '—';
+  if (date)  date.textContent  = d.date  || '—';
+}
+
+function renderAll(){
+  renderSummary();
+  renderProjectsList();
+  renderSnapshot();
+  renderLatest();
+  renderMessages();
+  renderDeadline();
+}
+
+/* ---------------- boot ---------------- */
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadAll();
+  renderAll();
+});
