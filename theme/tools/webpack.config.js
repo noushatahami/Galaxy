@@ -189,8 +189,20 @@ function mainConfig() {
                 filename: '[name].css',
             }),
             new CopyWebpackPlugin({
-                patterns: copyFolders(),
-            }),
+                patterns: [
+                    // copy your Galaxy pages
+                    { 
+                    from: path.resolve(__dirname, "../src/galaxy"), 
+                    to: path.resolve(__dirname, "../dist/galaxy") 
+                    },
+
+                    // copy ALL custom JS (including galaxy/profile.js)
+                    { 
+                    from: path.resolve(__dirname, "../src/js/custom/galaxy"), 
+                    to: path.resolve(__dirname, "../dist/assets/js/custom/galaxy") 
+                    },
+                ],
+                }),
         ].concat(extraPlugins),
         module: {
             rules: [

@@ -1,0 +1,437 @@
+// theme/src/js/custom/galaxy/profile.js
+// ONE tiny edit button per card. The "Research Area" card edits Research Areas + Awards + Patents in ONE modal.
+
+(() => {
+  /* ---------------- helpers ---------------- */
+  const $  = (s, r=document) => r.querySelector(s);
+  const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+  const H  = (t, c='', inner='') => { const n=document.createElement(t); if(c)n.className=c; if(inner!=null)n.innerHTML=inner; return n; };
+  const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+
+  let editMode = false;
+
+  /* ---------------- state & persistence ---------------- */
+  const state = {
+    profile: {
+      name: '—',
+      photo_url: 'assets/media/avatars/300-1.jpg',
+      social_media: {},             // { Platform: url/handle }
+      media_mentions: [],           // [string]
+      research_areas: [],           // [string]
+      awards: [],                   // [{year,title}]
+      patents: [],                  // [{title,number,inventors[],filed,status}]
+      mentors: [],                  // [string]
+      colleagues: [],               // [string]
+      partners: [],                 // [{type,count}]
+      positions: [],                // [string]
+      education: [],                // [string]
+      memberships: []               // [string]
+    }
+  };
+
+  function ensureShape() {
+    const p = state.profile || (state.profile = {});
+    p.social_media   = p.social_media   || {};
+    p.media_mentions = p.media_mentions || [];
+    p.research_areas = p.research_areas || [];
+    p.awards         = p.awards         || [];
+    p.patents        = p.patents        || [];
+    p.mentors        = p.mentors        || [];
+    p.colleagues     = p.colleagues     || [];
+    p.partners       = Array.isArray(p.partners) ? p.partners : [];
+    p.positions      = p.positions      || [];
+    p.education      = p.education      || [];
+    p.memberships    = p.memberships    || [];
+  }
+
+  function saveProfile() { ensureShape(); localStorage.setItem('galaxy_profile', JSON.stringify(state.profile)); }
+  async function loadProfile() {
+    const local = localStorage.getItem('galaxy_profile');
+    if (local) { try { state.profile = JSON.parse(local); ensureShape(); return; } catch {} }
+    try {
+      const r = await fetch('data/profile.json', { cache:'no-store' });
+      if (r.ok) { state.profile = await r.json(); ensureShape(); }
+    } catch {}
+  }
+
+  /* ---------------- renderers ---------------- */
+  const badge = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
+
+  function renderHeader() {
+    const n = $('#profile_name_display'); if (n) n.textContent = state.profile.name || '—';
+    const a = $('#avatar_wrapper'); if (a) a.style.backgroundImage = `url('${state.profile.photo_url || 'assets/media/avatars/300-1.jpg'}')`;
+  }
+
+  function renderSimpleList(sel, key) {
+    const ul = $(sel); if (!ul) return;
+    const arr = state.profile[key] || [];
+    ul.innerHTML = '';
+    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    arr.forEach(v => ul.appendChild(H('li','', v)));
+  }
+
+  function renderSocial() {
+    const ul = $('#social_media_view'); if (!ul) return;
+    const entries = Object.entries(state.profile.social_media || {});
+    ul.innerHTML = '';
+    if (!entries.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    entries.forEach(([k, v]) => ul.appendChild(H('li','', `<strong>${k}:</strong> ${v}`)));
+  }
+
+  function renderResearchAreas() {
+    const w = $('#research_areas_tags'); if (!w) return;
+    const arr = state.profile.research_areas || [];
+    w.innerHTML = arr.length ? arr.map(badge).join('') : '<span class="text-muted">—</span>';
+  }
+
+  function renderAwards() {
+    const ul = $('#awards_list'); if (!ul) return;
+    const arr = state.profile.awards || [];
+    ul.innerHTML = '';
+    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    arr.forEach(a => ul.appendChild(H('li','', `<span class="fw-semibold">${a.year || ''}</span> ${a.title || ''}`)));
+  }
+
+  function renderPatents() {
+    const ul = $('#patents_list'); if (!ul) return;
+    const arr = state.profile.patents || [];
+    ul.innerHTML = '';
+    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    arr.forEach(pt => {
+      const color = (pt.status||'').toLowerCase()==='pending' ? 'text-warning' : 'text-success';
+      ul.appendChild(H('li','mb-3', `
+        <div class="fw-semibold">${pt.title || ''}</div>
+        <div>No: ${pt.number || ''}</div>
+        <div>Inventors: ${(Array.isArray(pt.inventors)?pt.inventors:String(pt.inventors||'').split(',')).filter(Boolean).join(', ')}</div>
+        <div>Filed: ${pt.filed || ''}</div>
+        <div class="${color}">● ${pt.status || ''}</div>
+      `));
+    });
+  }
+
+  function renderAll() {
+    renderHeader();
+    renderSocial();
+    renderSimpleList('#media_mentions_list','media_mentions');
+    renderResearchAreas();
+    renderAwards();
+    renderPatents();
+    renderSimpleList('#mentors_list','mentors');
+    renderSimpleList('#colleagues_list','colleagues');
+    // partners is a special layout
+    const pv = $('#partners_view');
+    if (pv) {
+      const arr = state.profile.partners || [];
+      pv.innerHTML = arr.length ? arr.map(p=>`<li><span class="fw-semibold">${p.count}</span> ${p.type}</li>`).join('') : '<li class="text-muted">—</li>';
+    }
+    renderSimpleList('#positions_list','positions');
+    renderSimpleList('#education_list','education');
+    renderSimpleList('#memberships_list','memberships');
+    reflectEditMode();
+  }
+
+  /* ---------------- edit-mode tiny buttons ---------------- */
+  function reflectEditMode() {
+    const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
+    $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
+  }
+
+  // inject ONE tiny edit button per card
+  function ensureTinyButtons() {
+    const configs = [
+      { key:'social',  anchor:'#social_media_view',   title:'Edit: Social Media',        build: buildSocialModal },
+      { key:'media',   anchor:'#media_mentions_list', title:'Edit: Media Appearances',   build: () => buildSimpleLinesModal('media_mentions','One per line') },
+      // SINGLE button for the Research card → edits research areas + awards + patents
+      { key:'research_all', anchor:'#research_areas_tags', title:'Edit: Research Area',   build: buildResearchAwardsPatentsModal },
+      { key:'mentorscol', anchor:'#mentors_list',     title:'Edit: Mentors & Colleagues', build: buildMentorsColleaguesModal },
+      { key:'partners', anchor:'#partners_view',      title:'Edit: Partners',             build: buildPartnersModal },
+      { key:'positions',anchor:'#positions_list',     title:'Edit: Positions',            build: () => buildSimpleLinesModal('positions','One per line') },
+      { key:'education',anchor:'#education_list',     title:'Edit: Education',            build: () => buildSimpleLinesModal('education','One per line') },
+      { key:'members',  anchor:'#memberships_list',   title:'Edit: Memberships',          build: () => buildSimpleLinesModal('memberships','One per line') },
+    ];
+
+    configs.forEach(cfg => {
+      const card = document.querySelector(cfg.anchor)?.closest('.card');
+      const header = card?.querySelector('.card-header');
+      if (!header) return;
+
+      // Clean up any older multiple buttons inside this header
+      header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
+
+      let rail = header.querySelector('.card-toolbar');
+      if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
+
+      const btn = H('button','btn btn-sm btn-light box-edit-btn d-none','Edit');
+      btn.addEventListener('click', () => openModal(cfg.title, ...cfg.build()));
+      rail.appendChild(btn);
+    });
+  }
+
+  /* ---------------- shared modal shell ---------------- */
+  let bsModal;
+  function ensureModal() {
+    if ($('#galaxy_box_modal')) return;
+    const shell = H('div','modal fade','');
+    shell.id = 'galaxy_box_modal';
+    shell.tabIndex = -1;
+    shell.innerHTML = `
+      <div class="modal-dialog modal-dialog-centered modal-xl">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 class="modal-title">Edit</h3>
+            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal"><i class="ki-duotone ki-cross fs-2"></i></button>
+          </div>
+          <div class="modal-body"><div id="galaxy_box_modal_body"></div></div>
+          <div class="modal-footer">
+            <button id="galaxy_box_modal_save" class="btn btn-primary">Save</button>
+            <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(shell);
+    bsModal = new bootstrap.Modal(shell);
+  }
+
+  function openModal(title, bodyNode, onSave) {
+    ensureModal();
+    $('#galaxy_box_modal .modal-title').textContent = title;
+    const body = $('#galaxy_box_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+
+    const oldSave = $('#galaxy_box_modal_save');
+    const newSave = oldSave.cloneNode(true);
+    oldSave.parentNode.replaceChild(newSave, oldSave);
+    newSave.addEventListener('click', async () => {
+      await onSave();
+      saveProfile();
+      renderAll();
+      bsModal.hide();
+    });
+
+    bsModal.show();
+  }
+
+  /* ---------------- modal builders ---------------- */
+  function labeledSection(title) {
+    const s = H('div','mb-6','');
+    s.appendChild(H('div','fw-bold fs-5 mb-3', title));
+    const box = H('div','p-4 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+    s.appendChild(box);
+    return {wrap:s, box};
+  }
+
+  function buildSimpleLinesModal(key, hint='One per line') {
+    const {wrap, box} = labeledSection(hint);
+    const ta = H('textarea','form-control', (state.profile[key]||[]).join('\n')); ta.rows = 10; box.appendChild(ta);
+    const onSave = () => { state.profile[key] = ta.value.split('\n').map(s=>s.trim()).filter(Boolean); };
+    return [wrap, onSave];
+  }
+
+  function buildSocialModal() {
+    const {wrap, box} = labeledSection('Add, edit, or remove your social links.');
+    const list = H('div','d-flex flex-column gap-2','');
+    const row = (k='',v='') => {
+      const r = H('div','d-flex gap-2 align-items-center','');
+      r.innerHTML = `
+        <input class="form-control" placeholder="Platform (e.g., LinkedIn)" value="${k}">
+        <input class="form-control" placeholder="Handle / URL" value="${v}">
+        <button class="btn btn-light-danger">Remove</button>`;
+      r.lastElementChild.addEventListener('click',()=>r.remove());
+      return r;
+    };
+    Object.entries(state.profile.social_media||{}).forEach(([k,v])=>list.appendChild(row(k,v)));
+    const add = H('button','btn btn-light mt-3','+ Add row'); add.addEventListener('click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+    const onSave = () => {
+      const next={}; list.querySelectorAll(':scope > div').forEach(d=>{
+        const [p,h] = d.querySelectorAll('input'); const pk=p.value.trim(), hv=h.value.trim();
+        if (pk && hv) next[pk]=hv;
+      });
+      state.profile.social_media = next;
+    };
+    return [wrap,onSave];
+  }
+
+  // ONE modal for Research Areas + Awards + Patents (matches your screenshot idea)
+  function buildResearchAwardsPatentsModal() {
+    const root = H('div');
+
+    // Research Areas
+    {
+      const sec = labeledSection('Research Areas');
+      const list = H('div','d-flex flex-column gap-2','');
+      const row = (val='') => {
+        const r = H('div','d-flex gap-2 align-items-center','');
+        r.innerHTML = `
+          <input class="form-control" placeholder="add research area" value="${val}">
+          <button class="btn btn-icon btn-light"><i class="ki-duotone ki-cross"></i></button>`;
+        r.lastElementChild.addEventListener('click',()=>r.remove());
+        return r;
+      };
+      (state.profile.research_areas||[]).forEach(a => list.appendChild(row(a)));
+      const add = H('button','btn btn-light mt-3','+ Add area'); add.addEventListener('click',()=>list.appendChild(row()));
+      sec.box.appendChild(list); sec.box.appendChild(add);
+      root.appendChild(sec.wrap);
+
+      // capture onSave piece
+      root._saveAreas = () => {
+        const arr=[];
+        list.querySelectorAll('input').forEach(i=>{ const v=i.value.trim(); if(v) arr.push(v); });
+        state.profile.research_areas = arr;
+      };
+    }
+
+    // Awards & Honors
+    {
+      const sec = labeledSection('Awards & Honors');
+      const list = H('div','d-flex flex-column gap-2','');
+      const row = (year='', title='') => {
+        const r = H('div','d-flex gap-2 align-items-center','');
+        r.innerHTML = `
+          <div class="text-gray-500 fs-8">year</div>
+          <input class="form-control" style="max-width:160px" value="${year}">
+          <div class="text-gray-500 fs-8 ms-3">title</div>
+          <input class="form-control" value="${title}">
+          <button class="btn btn-light-danger">Remove</button>`;
+        r.lastElementChild.addEventListener('click',()=>r.remove());
+        return r;
+      };
+      (state.profile.awards||[]).forEach(a => list.appendChild(row(a.year||'', a.title||'')));
+      const add = H('button','btn btn-light mt-3','+ Add award'); add.addEventListener('click',()=>list.appendChild(row()));
+      sec.box.appendChild(list); sec.box.appendChild(add);
+      root.appendChild(sec.wrap);
+
+      root._saveAwards = () => {
+        const next=[]; list.querySelectorAll(':scope > div').forEach(d=>{
+          const ins = d.querySelectorAll('input');
+          const year = (ins[0]?.value||'').trim(); const title=(ins[1]?.value||'').trim();
+          if (title) next.push({year, title});
+        });
+        state.profile.awards = next;
+      };
+    }
+
+    // Patents
+    {
+      const sec = labeledSection('Patents');
+      const list = H('div','d-flex flex-column gap-3','');
+      const card = (pt={}) => {
+        const inv = Array.isArray(pt.inventors)?pt.inventors.join(', '):(pt.inventors||'');
+        const c = H('div','p-3 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+        c.innerHTML = `
+          <div class="row g-2">
+            <div class="col-md-6"><input class="form-control" placeholder="Title" value="${pt.title||''}"></div>
+            <div class="col-md-6"><input class="form-control" placeholder="Number" value="${pt.number||''}"></div>
+            <div class="col-md-6"><input class="form-control" placeholder="Inventors (comma-separated)" value="${inv}"></div>
+            <div class="col-md-3"><input class="form-control" placeholder="Filed (YYYY-MM)" value="${pt.filed||''}"></div>
+            <div class="col-md-3">
+              <select class="form-select">
+                <option ${pt.status==='Pending'?'selected':''}>Pending</option>
+                <option ${pt.status==='Granted'?'selected':''}>Granted</option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-2 text-end">
+            <button class="btn btn-sm btn-light-danger">Remove</button>
+          </div>`;
+        c.querySelector('.btn-light-danger').addEventListener('click',()=>c.remove());
+        return c;
+      };
+      (state.profile.patents||[]).forEach(p => list.appendChild(card(p)));
+      const add = H('button','btn btn-light mt-3','+ Add patent'); add.addEventListener('click',()=>list.appendChild(card()));
+      sec.box.appendChild(list); sec.box.appendChild(add);
+      root.appendChild(sec.wrap);
+
+      root._savePatents = () => {
+        const next=[]; list.querySelectorAll(':scope > .p-3').forEach(b=>{
+          const ins=b.querySelectorAll('input,select');
+          const [tEl,nEl,iEl,fEl,sEl]=ins;
+          const title=tEl.value.trim(); if (!title) return;
+          next.push({
+            title,
+            number:nEl.value.trim(),
+            inventors:(iEl.value||'').split(',').map(s=>s.trim()).filter(Boolean),
+            filed:fEl.value.trim(),
+            status:sEl.value.trim()
+          });
+        });
+        state.profile.patents = next;
+      };
+    }
+
+    const onSave = () => {
+      root._saveAreas && root._saveAreas();
+      root._saveAwards && root._saveAwards();
+      root._savePatents && root._savePatents();
+    };
+    return [root, onSave];
+  }
+
+  function buildMentorsColleaguesModal() {
+    const sec = H('div','row','');
+    const c1 = H('div','col-md-6','<div class="fw-semibold mb-2">Mentors</div>');
+    const c2 = H('div','col-md-6','<div class="fw-semibold mb-2">Colleagues</div>');
+    const t1 = H('textarea','form-control', (state.profile.mentors||[]).join('\n')); t1.rows=10;
+    const t2 = H('textarea','form-control', (state.profile.colleagues||[]).join('\n')); t2.rows=10;
+    c1.appendChild(t1); c2.appendChild(t2); sec.appendChild(c1); sec.appendChild(c2);
+    const onSave = () => {
+      state.profile.mentors = t1.value.split('\n').map(s=>s.trim()).filter(Boolean);
+      state.profile.colleagues = t2.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    };
+    return [sec, onSave];
+  }
+
+  function buildPartnersModal() {
+    const {wrap, box} = labeledSection('Type + Count (e.g., Academic • 5)');
+    const list = H('div','d-flex flex-column gap-2','');
+    const row = (type='', count='') => {
+      const r = H('div','d-flex gap-2 align-items-center','');
+      r.innerHTML = `
+        <input class="form-control" placeholder="Type" value="${type}">
+        <input class="form-control" placeholder="Count" value="${count}">
+        <button class="btn btn-light-danger">Remove</button>`;
+      r.lastElementChild.addEventListener('click',()=>r.remove());
+      return r;
+    };
+    (state.profile.partners||[]).forEach(p => list.appendChild(row(p.type||'', p.count||'')));
+    const add = H('button','btn btn-light mt-3','+ Add partner'); add.addEventListener('click',()=>list.appendChild(row()));
+    box.appendChild(list); box.appendChild(add);
+    const onSave = () => {
+      const next=[]; list.querySelectorAll(':scope > div').forEach(d=>{
+        const [t,c]=d.querySelectorAll('input'); const type=t.value.trim(), count=c.value.trim();
+        if (type && count) next.push({type, count});
+      });
+      state.profile.partners = next;
+    };
+    return [wrap,onSave];
+  }
+
+  /* ---------------- avatar & edit toggle ---------------- */
+  function wireAvatar() {
+    on($('#photo_input'),'change', e => {
+      const f = e.target.files?.[0]; if (!f) return;
+      const r = new FileReader();
+      r.onload = () => { state.profile.photo_url = r.result; saveProfile(); renderHeader(); };
+      r.readAsDataURL(f);
+    });
+  }
+
+  function wireEditToggle() {
+    on($('#editToggle'),'click', e => {
+      e.preventDefault();
+      editMode = !editMode;
+      reflectEditMode();
+    });
+  }
+
+  /* ---------------- boot ---------------- */
+  document.addEventListener('DOMContentLoaded', async () => {
+    await loadProfile();
+    ensureShape();
+
+    ensureTinyButtons();   // inject ONE tiny edit button for each card
+    wireEditToggle();
+    wireAvatar();
+
+    renderAll();
+  });
+})();
