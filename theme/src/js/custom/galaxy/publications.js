@@ -181,6 +181,23 @@
     });
   }
 
+  /* ---------------- fetch verified pubs form backend ---------------- */
+  async function fetchPublicationsAggregate() {
+    const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+    const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+
+    const fd = new FormData();
+    const cvId = localStorage.getItem('galaxy_cv_id') || '';
+    if (cvId) fd.set('cv_id', cvId);
+
+    const res = await fetch(`${API}/publications/aggregate`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      console.warn('aggregate failed:', res.status);
+      return null;
+    }
+    return await res.json(); // { publications: [...] }
+  }
+
   /* ---------------- shared modal ---------------- */
   let bsModal;
   function ensureModal() {
@@ -411,9 +428,36 @@
 
   /* ---------------- boot ---------------- */
   document.addEventListener('DOMContentLoaded', async () => {
-    await load();
-    ensureTinyButtons();
-    wireEditToggle();
+    await load(); // show cache instantly if any
+
+    try {
+      const data = await fetchPublicationsAggregate();
+      if (data && Array.isArray(data.publications)) {
+        state.publications = data.publications.map(p => ({
+          title: p.title || '',
+          authors: Array.isArray(p.authors)
+            ? p.authors
+            : String(p.authors || '').split(',').map(s => s.trim()).filter(Boolean),
+          journal: p.journal || p.venue || p.conference || '',
+          year: p.year || 0,
+          citations: Number(p.citations ?? p.citationCount ?? 0) || 0,
+          url: p.pdf_link || p.url || (p.doi ? `https://doi.org/${p.doi}` : ''),
+          tags: p.tags || p.topics || []
+        }));
+
+        // derive & save
+        state.metrics  = computeMetricsFromPublications(state.publications);
+        state.topCited = [...state.publications].sort((a,b)=>(b.citations||0)-(a.citations||0)).slice(0,5);
+        state.topics   = [...new Set(state.publications.flatMap(p => p.tags || []))].slice(0,12);
+
+        saveState?.(); // if your file exposes saveState()
+      }
+    } catch (e) {
+      console.warn('Aggregate fetch failed; showing cached/local only', e);
+    }
+
+    ensureTinyButtons?.();
+    wireEditToggle?.();
     renderAll();
   });
 })();

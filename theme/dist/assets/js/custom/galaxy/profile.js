@@ -7,6 +7,9 @@
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
   const H  = (t, c='', inner='') => { const n=document.createElement(t); if(c)n.className=c; if(inner!=null)n.innerHTML=inner; return n; };
   const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
+  // API base (local dev vs prod)
+  const isLocalApi = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+  const API = isLocalApi ? 'http://127.0.0.1:3001/api' : '/api';
 
   let editMode = false;
 
@@ -130,12 +133,64 @@
     reflectEditMode();
   }
 
+  // Force-paint with a plain profile object
+  function paintProfileImmediate(profile){
+    const nameEl = document.getElementById('profile_name_display');
+    if (nameEl) nameEl.textContent = profile?.name || '—';
+
+    const socialWrap = document.getElementById('social_media_view');
+    if (socialWrap) {
+      socialWrap.innerHTML = '';
+      const entries = Object.entries(profile?.socials || {});
+      if (!entries.length) socialWrap.innerHTML = '<li class="text-muted">—</li>';
+      else entries.forEach(([k,v])=>{
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>${k}:</strong> ${v}`;
+        socialWrap.appendChild(li);
+      });
+    }
+
+    const tagWrap = document.getElementById('research_areas_tags');
+    if (tagWrap) {
+      tagWrap.innerHTML = '';
+      (profile?.research_areas || []).forEach(t=>{
+        const b = document.createElement('span');
+        b.className = 'badge badge-light-success me-2 mb-2';
+        b.textContent = t;
+        tagWrap.appendChild(b);
+      });
+      if ((profile?.research_areas||[]).length === 0) tagWrap.innerHTML = '<span class="text-muted">—</span>';
+    }
+
+    const paintList = (id, items) => {
+      const ul = document.getElementById(id);
+      if (!ul) return;
+      ul.innerHTML = '';
+      (items || []).forEach(v => {
+        const li = document.createElement('li'); li.textContent = v; ul.appendChild(li);
+      });
+      if (!items || !items.length) ul.innerHTML = '<li class="text-muted">—</li>';
+    };
+    paintList('positions_list',   profile?.positions);
+    paintList('education_list',   profile?.education);
+    paintList('memberships_list', profile?.memberships);
+
+    const notes = document.getElementById('media_mentions_list');
+    if (notes) {
+      const li = document.createElement('li');
+      li.textContent = `Imported CV ${new Date().toLocaleDateString()}`;
+      notes.prepend(li);
+    }
+  }
+
   /* ---------------- edit-mode tiny buttons ---------------- */
   function reflectEditMode() {
     const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
     $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
+     const importBtn = $('#importCvBtn');
+     if (importBtn) importBtn.classList.toggle('d-none', !editMode);
   }
-
+  
   // inject ONE tiny edit button per card
   function ensureTinyButtons() {
     const configs = [
@@ -423,6 +478,79 @@
     });
   }
 
+  function wireImportButton() {
+    const btn = $('#importCvBtn');
+    const modal = $('#importCvModal');
+    if (!btn || !modal) return;
+    btn.addEventListener('click', () => {
+      bootstrap.Modal.getOrCreateInstance(modal).show();
+    });
+  }
+
+  function wireImportSubmit(){
+    const form  = document.getElementById('importCvForm');
+    const modal = document.getElementById('importCvModal');
+    const errEl = document.getElementById('cv_err');
+    if (!form || !modal) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (errEl) errEl.classList.add('d-none');
+
+      const file = document.getElementById('cvFile')?.files?.[0];
+      if (!file) {
+        if (errEl) { errEl.textContent = 'Please choose a CV (PDF).'; errEl.classList.remove('d-none'); }
+        return;
+      }
+
+      const fd = new FormData(form);
+      fd.set('cv', file); // backend expects "cv"
+
+      try {
+        const r = await fetch(`${API}/ingest/cv`, { method:'POST', body: fd });
+        if (!r.ok) throw new Error(`Upload failed (${r.status})`);
+        const data = await r.json();
+
+        // Save cv_id for other pages (e.g., Publications verify)
+        if (data.cv_id) localStorage.setItem('galaxy_cv_id', data.cv_id);
+
+        const p = data.profile || {};
+        // also include the socials typed by the user so UI updates immediately
+        p.socials = p.socials || {};
+        const li = form.querySelector('[name="linkedin_url"]')?.value?.trim();
+        const sc = form.querySelector('[name="scholar_url"]')?.value?.trim();
+        const tw = form.querySelector('[name="x_url"]')?.value?.trim();
+        if (li) p.socials['LinkedIn'] = li;
+        if (sc) p.socials['Google Scholar'] = sc;
+        if (tw) p.socials['X'] = tw;
+
+        // Merge into your state shape
+        state.profile.name = p.name || state.profile.name;
+        state.profile.social_media = { ...(state.profile.social_media||{}), ...(p.socials||{}) };
+        if (Array.isArray(p.research_areas)) state.profile.research_areas = p.research_areas;
+        if (Array.isArray(p.positions))       state.profile.positions      = p.positions;
+        if (Array.isArray(p.education))       state.profile.education      = p.education;
+        if (Array.isArray(p.memberships))     state.profile.memberships    = p.memberships;
+
+        // Persist & paint now
+        localStorage.setItem('galaxy_profile', JSON.stringify(state.profile));
+        paintProfileImmediate({
+          name: state.profile.name,
+          socials: state.profile.social_media,
+          research_areas: state.profile.research_areas,
+          positions: state.profile.positions,
+          education: state.profile.education,
+          memberships: state.profile.memberships
+        });
+
+        setTimeout(()=>bootstrap.Modal.getOrCreateInstance(modal).hide(), 50);
+      } catch (err) {
+        console.error('[CV Import] error', err);
+        if (errEl) { errEl.textContent = err.message || 'Import failed.'; errEl.classList.remove('d-none'); }
+      }
+    });
+  }
+
   /* ---------------- boot ---------------- */
   document.addEventListener('DOMContentLoaded', async () => {
     await loadProfile();
@@ -431,7 +559,8 @@
     ensureTinyButtons();   // inject ONE tiny edit button for each card
     wireEditToggle();
     wireAvatar();
-
+    wireImportButton();
+    wireImportSubmit();
     renderAll();
   });
 })();

@@ -1,0 +1,515 @@
+{
+  "compliance": {
+  "name": "",
+  "compliance": {
+    "summary": {
+      "compliant": 0,
+      "pending": 0,
+      "non_compliant": 0
+    },
+    "quick_actions": [
+      ""
+    ],
+    "key_contacts": [
+      {
+        "name": "",
+        "role": "",
+        "image": ""
+      }
+    ],
+    "checkpoints": [
+      {
+        "title": "",
+        "status": "",
+        "last_reviewed": ""
+      }
+    ],
+    "audits": [
+      {
+        "name": "",
+        "date": "",
+        "score": "",
+        "tags": [""]
+      }
+    ],
+    "notes": [
+      ""
+    ]
+  }
+},
+  "courses": {
+  "name": "",
+  "courses_page": {
+    "teaching_philosophy": "",
+    "office_hours": 0,
+    "courses_taught": [
+      {
+        "title": "",
+        "code": "",
+        "term": "",
+        "level": "",
+        "description": "",
+        "students": 0
+      }
+    ],
+    "tools_used": [""],
+    "course_links": [
+      {
+        "label": "",
+        "url": ""
+      }
+    ]
+  }
+},
+  "donations": {
+  "name": "",
+  "donations": [
+    {
+      "amount": 0,
+      "from": "",
+      "date": ""
+    }
+  ],
+  "donation_summary": {
+    "total_donations": "",
+    "yearly_change": "",
+    "note": ""
+  },
+  "top_donors": [
+    {
+      "name": "",
+      "amount": ""
+    }
+  ],
+  "donation_sources": [
+    {
+      "type": "",
+      "amount": ""
+    }
+  ],
+  "upcoming_events": [
+    {
+      "title": "",
+      "date": "",
+      "location": ""
+    }
+  ],
+  "quarterly_goal": {
+    "goal": 0,
+    "raised": 0,
+    "note": ""
+  }
+},
+  "finance": {
+  "name": "",
+  "finance": {
+    "grant_budget_usage": [
+      {
+        "title": "",
+        "total_budget": 0,
+        "spent": 0
+      }
+    ],
+    "reimbursements": [
+      {
+        "date": "",
+        "description": "",
+        "amount": 0,
+        "status": ""
+      }
+    ],
+    "travel_conferences": [
+      {
+        "event": "",
+        "location": "",
+        "purpose": "",
+        "status": ""
+      }
+    ],
+    "documents": [
+      {
+        "title": "",
+        "file": ""
+      }
+    ],
+    "actions": [
+      {
+        "label": ""
+      }
+    ]
+  },
+  "summary": {
+    "fiscal_year": "",
+    "total_budget": 0,
+    "total_spent": 0
+  }
+},
+  "grants": {
+  "name": "",
+  "total_grants_awarded": {
+    "amount": "",
+    "change": "",
+    "note": ""
+  },
+  "available_budget": {
+    "amount": "",
+    "change": "",
+    "note": ""
+  },
+  "partners": {
+    "Academic Partners": 0,
+    "Industry Partners": 0
+  },
+  "last_awarded_grant": {
+    "title": "",
+    "grant_id": "",
+    "agency": "",
+    "agency_short": "",
+    "type": "",
+    "duration": "",
+    "extension": "",
+    "amount_awarded": "",
+    "amount_received": "",
+    "amount_spent": "",
+    "tags": [""]
+  },
+  "breakdown": {
+    "grant_id": ""
+  },
+  "reports": {
+    "grant_id": "",
+    "next_due": "",
+    "last_submitted": ""
+  },
+  "keywords_section": {
+    "grant_id": "",
+    "keywords": [""]
+  }
+},
+  "hr": {
+  "name": "",
+  "hr_middle_column": {
+    "compliance_certifications": [
+      {
+        "title": "",
+        "status": "",
+        "date_completed": "",
+        "due_date": "",
+        "last_accessed": "",
+        "action": ""
+      }
+    ],
+    "leave_attendance_overview": {
+      "leave_balance": {
+        "annual": 0,
+        "sick": 0,
+        "unpaid": 0
+      },
+      "attendance_logs": [
+        {
+          "date": "",
+          "issue": "",
+          "resolved": false
+        }
+      ]
+    },
+    "open_roles": [
+      {
+        "title": "",
+        "department": "",
+        "location": "",
+        "status": "",
+        "action": ""
+      }
+    ]
+  },
+  "hr_right_column": {
+    "documents": [
+      {
+        "title": "",
+        "type": "",
+        "file": ""
+      }
+    ],
+    "actions": [
+      {
+        "label": ""
+      }
+    ]
+  }
+},  
+  "innovation": {
+  "name": "",
+  "breakthrough_projects": [
+    {
+      "title": "",
+      "description": "",
+      "tags": [""],
+      "progress": 0
+    }
+  ],
+  "ideas_incubator": [
+    {
+      "idea": "",
+      "submitted_by": "",
+      "status": ""
+    }
+  ],
+  "awards": [
+    {
+      "year": "",
+      "title": "",
+      "project": ""
+    }
+  ],
+  "spin_offs": [
+    {
+      "name": "",
+      "link": "",
+      "tags": [""]
+    }
+  ],
+  "highlights": [""],
+  "metrics": [
+    {
+      "label": "",
+      "value": "",
+      "delta": ""
+    }
+  ],
+  "external_hubs": [
+    {
+      "name": "",
+      "link": ""
+    }
+  ]
+},
+  "it": {
+  "name": "",
+  "it_page": {
+    "system_architecture": {
+      "cloud_provider": "",
+      "server_location": "",
+      "diagram_image": ""
+    },
+    "core_tools": [
+      {
+        "name": "",
+        "icon": ""
+      }
+    ],
+    "security_protocols": {
+      "mfa": "",
+      "vpn": "",
+      "compliance": [""]
+    },
+    "internal_tools": [
+      {
+        "name": "",
+        "description": "",
+        "team_lead": "",
+        "launch_date": ""
+      }
+    ],
+    "it_contacts": [
+      {
+        "name": "",
+        "role": "",
+        "email": "",
+        "phone": "",
+        "avatar": ""
+      }
+    ],
+    "system_status": "",
+    "asset_summary": {
+      "devices_issued": 0,
+      "active_licenses": 0,
+      "open_tickets": 0
+    },
+    "quick_links": [
+      {
+        "label": "",
+        "url": ""
+      }
+    ]
+  }
+},  
+  "outreach": {
+  "name": "",
+  "impact_campaigns": [
+    {
+      "title": "",
+      "tagline": "",
+      "location": "",
+      "audience": "",
+      "status": "",
+      "image": "",
+      "focus_area": ""
+    }
+  ],
+  "community_voices": [
+    {
+      "quote": "",
+      "name": "",
+      "role": "",
+      "location": ""
+    }
+  ],
+  "media_features": [
+    {
+      "title": "",
+      "platform": "",
+      "date": "",
+      "link": "",
+      "type": ""
+    }
+  ],
+  "stats": {
+    "people_reached": 0,
+    "countries_engaged": 0,
+    "partners": 0,
+    "media_mentions": 0
+  }
+},
+  "profile": {
+  "name": "",
+  "photo_url": "",
+  "social_media": {
+    "Twitter": "",
+    "LinkedIn": "",
+    "Google Scholar": ""
+  },
+  "media_mentions": [""],
+  "research_areas": [""],
+  "awards": [
+    {
+      "year": "",
+      "title": ""
+    }
+  ],
+  "patents": [
+    {
+      "title": "",
+      "number": "",
+      "inventors": [""],
+      "filed": "",
+      "status": ""
+    }
+  ],
+  "positions": [""],
+  "affiliations": [""],
+  "education": [""],
+  "memberships": [""],
+  "mentors": [""],
+  "colleagues": [""],
+  "keywords": [""],
+  "partners": {
+    "Academic Partners": 0,
+    "Industry Partners": 0
+  }
+},
+  "projects": {
+  "name": "",
+  "project_snapshot": {
+    "status": "",
+    "days_remaining": 0,
+    "title": "",
+    "description": "",
+    "donut_percentage": 0,
+    "tags": [
+      {
+        "label": ""
+      }
+    ]
+  },
+  "project_status": {
+    "counts": {
+      "active": 0,
+      "on_hold": 0,
+      "stopped": 0
+    },
+    "projects": [
+      {
+        "label": "",
+        "status": "",
+        "selected": false
+      }
+    ]
+  },
+  "impact_points": {
+    "total": "",
+    "change": "",
+    "note": ""
+  },
+  "total_budget": {
+    "amount": "",
+    "change": "",
+    "note": ""
+  },
+  "next_deadline": {
+    "label": "",
+    "date": ""
+  },
+  "messages": [
+    {
+      "name": "",
+      "time_ago": "",
+      "subject": ""
+    }
+  ],
+  "latest_activity": [
+    {
+      "name": "",
+      "action": "",
+      "time_ago": "",
+      "avatar": "",
+      "approved": false
+    }
+  ]
+},
+  "publications": {
+  "name": "",
+  "publications": [
+    {
+      "title": "",
+      "authors": "",
+      "journal": "",
+      "year": 0,
+      "tags": [""],
+      "doi": "",
+      "pdf_link": "",
+      "status": "",
+      "citations": 0
+    }
+  ]
+}, 
+  "students": {
+  "name": "",
+  "team": [
+    {
+      "name": "",
+      "role": "",
+      "department": "",
+      "type": "",
+      "avatar": ""
+    }
+  ],
+  "mentorship": [
+    {
+      "mentor": {
+        "name": "",
+        "role": "",
+        "avatar": ""
+      },
+      "mentees": [
+        {
+          "name": "",
+          "role": "",
+          "avatar": ""
+        }
+      ]
+    }
+  ]
+}
+
+}
