@@ -229,3 +229,106 @@ def verify_publications_against_cv(pubs: List[Dict], cv_text: str) -> Tuple[List
     i10 = sum(1 for c in cites if c >= 10)
     metrics = {"totalCitations": total_cites, "hIndex": h, "i10": i10}
     return verified, metrics
+
+# --- CV-aware + stable S2 author resolution ---
+
+from rapidfuzz import fuzz
+
+AFFIL_HINT_WORDS = [
+    "university","institute","laboratory","lab","college","department",
+    "centre","center","school","faculty","hospital"
+]
+
+def _affil_candidates_from_cv(cv_text: str, max_len: int = 2000) -> list[str]:
+    if not cv_text:
+        return []
+    lines = [" ".join(l.split()) for l in cv_text[:max_len].splitlines() if l.strip()]
+    hits, seen = [], set()
+    for L in lines:
+        low = L.lower()
+        if any(w in low for w in AFFIL_HINT_WORDS):
+            if L not in seen:
+                hits.append(L); seen.add(L)
+    return hits[:20]
+
+def _fetch_author_affiliations(author_id: str) -> str:
+    try:
+        r = requests.get(
+            f"{SS_BASE}/author/{author_id}",
+            params={"fields": "name,affiliations"},
+            headers=SS_HEADERS or None,
+            timeout=20,
+        )
+        if r.ok:
+            j = r.json() or {}
+            return j.get("affiliations") or ""
+    except Exception:
+        pass
+    return ""
+
+def resolve_s2_author_id_stable(name: str, cv_text: str, max_candidates: int = 5) -> tuple[Optional[str], dict]:
+    """
+    Search by name; for each candidate:
+      - fetch papers and count how many titles verify against the CV text
+      - compare affiliations vs CV lines
+    Score = verified_count * 10 + affil_score; pick the best. Return (author_id, debug).
+    """
+    debug = {"candidates": []}
+    try:
+        # Step 1: candidate list by name (no unsupported fields param)
+        r = requests.get(
+            f"{SS_BASE}/author/search",
+            params={"query": name, "limit": max_candidates},
+            headers=SS_HEADERS or None,
+            timeout=20,
+        )
+        if not r.ok:
+            debug["error"] = f"S2 search {r.status_code}: {r.text[:200]}"
+            return None, debug
+
+        data = r.json() or {}
+        cands = data.get("data") or []
+        if not cands:
+            debug["note"] = "no candidates"
+            return None, debug
+
+        affil_lines = _affil_candidates_from_cv(cv_text)
+        best_id, best_score = None, -1
+
+        for c in cands:
+            aid = str(c.get("authorId"))
+            if not aid:
+                continue
+
+            papers = ss_author_papers(aid, limit=80) or []
+            verified, _m = verify_publications_against_cv(papers, cv_text or "")
+            verified_count = sum(1 for p in verified if p.get("verified"))
+
+            affs = _fetch_author_affiliations(aid)
+            affil_score = 0
+            for L in affil_lines:
+                affil_score = max(affil_score, fuzz.partial_ratio(L, affs))
+
+            score = verified_count * 10 + affil_score
+            debug["candidates"].append({
+                "author_id": aid,
+                "verified_count": verified_count,
+                "affil_score": affil_score,
+                "score": score,
+            })
+            if score > best_score:
+                best_score, best_id = score, aid
+
+        # Soft guard: if literally no signal, return None so caller can fall back to CV pubs
+        if best_id is None:
+            return None, debug
+        best = next((x for x in debug["candidates"] if x["author_id"] == best_id), None)
+        if best and best["verified_count"] == 0 and best["affil_score"] < 30:
+            debug["note"] = "low-confidence candidate"
+            return None, debug
+
+        debug["chosen"] = best_id
+        return best_id, debug
+    except Exception as e:
+        debug["exception"] = str(e)
+        return None, debug
