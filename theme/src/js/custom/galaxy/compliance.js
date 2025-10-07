@@ -24,6 +24,16 @@
 
   /* ----------------------- persistence ----------------------- */
   function save(){ localStorage.setItem('galaxy_compliance', JSON.stringify(state)); }
+  async function persistPage(page, data){
+    try{
+      await fetch(`${API}/page`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ page, data })
+      });
+    }catch(e){ console.error(e); }
+  }
+
   async function load() {
     const hasCV = !!localStorage.getItem('galaxy_cv_id');
 
@@ -269,8 +279,16 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async ()=>{
-      await onSave();
-      save();
+      await onSave();                              // copy inputs -> state
+      await persistPage('compliance', {            // NEW: push to /api/page
+        summary: state.summary,
+        quick_actions: state.quickActions,
+        key_contacts: state.keyContacts,
+        checkpoints: state.checkpoints,
+        audits: state.audits,
+        notes: state.notes
+      });
+      save();                                      // keep local cache
       renderAll();
       bsModal.hide();
     });

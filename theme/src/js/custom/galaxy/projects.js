@@ -53,6 +53,15 @@
 
   /* ----------------------- persistence ----------------------- */
   function save() { localStorage.setItem('galaxy_projects', JSON.stringify(state)); }
+  async function persistPage(page, data){
+    try{
+      await fetch(`${API}/page`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ page, data })
+      });
+    }catch(e){ console.error(e); }
+  }
 
   async function load() {
     const hasCV = !!localStorage.getItem('galaxy_cv_id');
@@ -376,7 +385,24 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async () => {
-      await onSave();
+      await onSave();                                // inputs -> state
+      await persistPage('projects', {                // NEW
+        impact_points:   state.impact,
+        total_budget:    state.budget,
+        project_status:  { projects: state.projects },
+        project_snapshot:{
+          status: state.snapshot?.status || '',
+          statusColor: state.snapshot?.statusColor || '#20E3B2',
+          days_remaining: Number(state.snapshot?.days || 0),
+          title: state.snapshot?.title || '',
+          description: state.snapshot?.desc || '',
+          tags: state.snapshot?.tags || [],
+          donut_percentage: (state.snapshot?.donut ?? null)
+        },
+        latest_activity: state.latestActivity || [],
+        messages:        state.messages || [],
+        next_deadline:   state.deadline || { label:'', date:'' }
+      });
       save();
       renderAll();
       bsModal.hide();

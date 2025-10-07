@@ -157,6 +157,21 @@ def _to_int(x):
     try: return int(str(x).replace(",", "").strip())
     except: return 0
 
+def _deep_merge(dst, src):
+    """Deep merge dicts: values in src overwrite/extend dst in-place."""
+    if not isinstance(dst, dict) or not isinstance(src, dict):
+        return src
+    for k, v in src.items():
+        if k in dst and isinstance(dst[k], dict) and isinstance(v, dict):
+            _deep_merge(dst[k], v)
+        else:
+            dst[k] = v
+    return dst
+
+def _active_cv_id():
+    # prefer ACTIVE snapshot if present
+    return ACTIVE.get("cv_id") or (next(reversed(STORE.keys())) if STORE else None)
+
 # ----------------------------
 # Health
 # ----------------------------
@@ -450,3 +465,45 @@ def api_compliance_quick_actions(cv_id: Optional[str] = None):
 @app.get("/api/compliance/contacts")
 def api_compliance_contacts(cv_id: Optional[str] = None):
     return {"items": api_compliance(cv_id).get("key_contacts") or []}
+
+# page-save endpoint
+from fastapi import Body
+
+@app.post("/api/page")
+def api_page_save(payload: dict = Body(...)):
+    """
+    Accepts:
+      { "page": "projects"|"grants"|"compliance", "data": {...} }
+    Merges into ACTIVE and STORE[cv_id]['parsed'][page] so /api/<page> serves it.
+    """
+    page = (payload or {}).get("page")
+    data = (payload or {}).get("data") or {}
+    if page not in {"projects", "grants", "compliance"}:
+        raise HTTPException(status_code=400, detail="Unsupported page")
+
+    cv_id = _active_cv_id()
+    if not cv_id or cv_id not in STORE:
+        raise HTTPException(status_code=400, detail="No active CV")
+
+    # 1) Merge into ACTIVE snapshot
+    cur_active = ACTIVE.get(page) or {}
+    ACTIVE[page] = _deep_merge(cur_active.copy(), data)
+
+    # 2) Mirror into parsed CV so subsequent GETs match
+    parsed = STORE[cv_id].setdefault("parsed", {})
+    cur_parsed = parsed.get(page) or {}
+    parsed[page] = _deep_merge(cur_parsed, data)
+
+    # 3) Page-specific derived fields (for Grants totals)
+    if page == "grants":
+        def _to_int2(x):
+            try: return int(str(x).replace(",", "").strip())
+            except: return 0
+        grants_list = ACTIVE["grants"].get("grants") or []
+        total_awarded  = sum(_to_int2(x.get("amountAwarded") or x.get("amount") or 0) for x in grants_list)
+        total_received = sum(_to_int2(x.get("amountReceived") or 0) for x in grants_list)
+        total_spent    = sum(_to_int2(x.get("amountSpent") or 0) for x in grants_list)
+        ACTIVE["grants"]["total_grants_awarded"] = {"amount": total_awarded}
+        ACTIVE["grants"]["available_budget"]     = {"amount": max(total_received - total_spent, 0)}
+
+    return {"ok": True, "page": page, "data": ACTIVE[page]}

@@ -28,6 +28,16 @@
 
   /* ----------------------- persistence ----------------------- */
   function save() { localStorage.setItem('galaxy_grants', JSON.stringify(state)); }
+  async function persistPage(page, data){
+    try{
+      await fetch(`${API}/page`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ page, data })
+      });
+    }catch(e){ console.error(e); }
+  }
+
   async function load() {
     const hasCV = !!localStorage.getItem('galaxy_cv_id');
 
@@ -274,7 +284,16 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async () => {
-      await onSave();
+      await onSave();                                // inputs -> state
+      await persistPage('grants', {                  // NEW
+        grants: state.grants,
+        total_grants_awarded: { amount: state.totals?.totalAwarded ?? 0 },
+        available_budget:    { amount: state.totals?.availableBudget ?? 0 },
+        last_awarded_grant:  state.lastAwarded || null,
+        breakdown:           state.breakdown || { categories: [], total: 0 },
+        reports:             state.reports   || { grantId:'', nextDue:'', lastSubmitted:'' },
+        keywords:            state.keywords  || []
+      });
       save();
       renderAll();
       bsModal.hide();
