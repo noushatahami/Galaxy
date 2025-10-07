@@ -77,6 +77,7 @@ ACTIVE = {
     "projects": {},
     "grants": {},
     "compliance": {},
+    "publications": {},
 }
 
 def _latest_cv_id() -> Optional[str]:
@@ -466,6 +467,23 @@ def api_compliance_quick_actions(cv_id: Optional[str] = None):
 def api_compliance_contacts(cv_id: Optional[str] = None):
     return {"items": api_compliance(cv_id).get("key_contacts") or []}
 
+# ----------------------------
+# Profile & Publications — GET (reads ACTIVE)
+# ----------------------------
+@app.get("/api/profile")
+def api_profile(cv_id: Optional[str] = None):
+    if cv_id and cv_id in STORE:
+        base = (STORE[cv_id].get("profile") or {}).copy()
+        return base
+    return ACTIVE.get("profile") or {}
+
+@app.get("/api/publications")
+def api_publications(cv_id: Optional[str] = None):
+    if cv_id and cv_id in STORE:
+        parsed = (STORE[cv_id].get("parsed") or {}).get("publications") or {}
+        return parsed
+    return ACTIVE.get("publications") or {}
+
 # page-save endpoint
 from fastapi import Body
 
@@ -473,12 +491,12 @@ from fastapi import Body
 def api_page_save(payload: dict = Body(...)):
     """
     Accepts:
-      { "page": "projects"|"grants"|"compliance", "data": {...} }
-    Merges into ACTIVE and STORE[cv_id]['parsed'][page] so /api/<page> serves it.
+      { "page": "projects"|"grants"|"compliance"|"profile"|"publications", "data": {...} }
+    Merges into ACTIVE and STORE[cv_id]['parsed' or 'profile'] so /api/<page> serves it.
     """
     page = (payload or {}).get("page")
     data = (payload or {}).get("data") or {}
-    if page not in {"projects", "grants", "compliance"}:
+    if page not in {"projects", "grants", "compliance", "profile", "publications"}:
         raise HTTPException(status_code=400, detail="Unsupported page")
 
     cv_id = _active_cv_id()
@@ -489,12 +507,19 @@ def api_page_save(payload: dict = Body(...)):
     cur_active = ACTIVE.get(page) or {}
     ACTIVE[page] = _deep_merge(cur_active.copy(), data)
 
-    # 2) Mirror into parsed CV so subsequent GETs match
+    # 2) Mirror into parsed/profile block so subsequent GETs match
     parsed = STORE[cv_id].setdefault("parsed", {})
-    cur_parsed = parsed.get(page) or {}
-    parsed[page] = _deep_merge(cur_parsed, data)
 
-    # 3) Page-specific derived fields (for Grants totals)
+    if page == "profile":
+        # profile is stored at top-level too
+        prof_now = STORE[cv_id].get("profile") or {}
+        STORE[cv_id]["profile"] = _deep_merge(prof_now, data)
+        # also mirror under parsed["profile"] for symmetry
+        parsed["profile"] = _deep_merge(parsed.get("profile") or {}, data)
+    else:
+        parsed[page] = _deep_merge(parsed.get(page) or {}, data)
+
+    # 3) Page-specific derived fields (keep your grants totals logic)
     if page == "grants":
         def _to_int2(x):
             try: return int(str(x).replace(",", "").strip())
@@ -507,3 +532,4 @@ def api_page_save(payload: dict = Body(...)):
         ACTIVE["grants"]["available_budget"]     = {"amount": max(total_received - total_spent, 0)}
 
     return {"ok": True, "page": page, "data": ACTIVE[page]}
+

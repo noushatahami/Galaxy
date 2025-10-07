@@ -57,6 +57,37 @@
     } catch {}
   }
 
+  async function persistPage(page, data){
+    try{
+      const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+      const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+      await fetch(`${API}/page`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ page, data })
+      });
+    }catch(e){ console.error('persistPage error:', e); }
+  }
+
+  function toProfilePayload(){
+    // Map your state shape to API profile fields
+    const p = state.profile || {};
+    return {
+      name: p.name || undefined,
+      socials: p.social_media || {},
+      media_mentions: p.media_mentions || [],
+      research_areas: p.research_areas || [],
+      awards: p.awards || [],
+      patents: p.patents || [],
+      mentors: p.mentors || [],
+      colleagues: p.colleagues || [],
+      partners: p.partners || [],
+      positions: p.positions || [],
+      education: p.education || [],
+      memberships: p.memberships || []
+    };
+  }
+
   /* ---------------- renderers ---------------- */
   const badge = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
 
@@ -256,12 +287,12 @@
     const newSave = oldSave.cloneNode(true);
     oldSave.parentNode.replaceChild(newSave, oldSave);
     newSave.addEventListener('click', async () => {
-      await onSave();
-      saveProfile();
+      await onSave();                // pull inputs → state.profile
+      saveProfile();                 // local cache
+      await persistPage('profile', toProfilePayload()); // <-- NEW: write-through to API
       renderAll();
       bsModal.hide();
     });
-
     bsModal.show();
   }
 

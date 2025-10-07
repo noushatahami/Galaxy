@@ -34,6 +34,28 @@
     return uniq(all).slice(0, 12);
   }
 
+  async function persistPage(page, data){
+    try{
+      const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+      const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+      await fetch(`${API}/page`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ page, data })
+      });
+    }catch(e){ console.error('persistPage error:', e); }
+  }
+
+  function toPublicationsPayload(){
+    return {
+      publications: state.publications || [],
+      metrics: state.metrics || null,
+      topics: state.topics || [],
+      topCited: state.topCited || [],
+      overrides: state.overrides || {}
+    };
+  }
+
   /* ---------------- state & persistence ---------------- */
   let editMode = false;
 
@@ -232,8 +254,9 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async () => {
-      await onSave();
-      save();
+      await onSave();                            // inputs → state
+      save();                                    // localStorage
+      await persistPage('publications', toPublicationsPayload()); // <-- NEW
       renderAll();
       bsModal.hide();
     });
@@ -430,31 +453,21 @@
   document.addEventListener('DOMContentLoaded', async () => {
     await load(); // show cache instantly if any
 
-    try {
-      const data = await fetchPublicationsAggregate();
-      if (data && Array.isArray(data.publications)) {
-        state.publications = data.publications.map(p => ({
-          title: p.title || '',
-          authors: Array.isArray(p.authors)
-            ? p.authors
-            : String(p.authors || '').split(',').map(s => s.trim()).filter(Boolean),
-          journal: p.journal || p.venue || p.conference || '',
-          year: p.year || 0,
-          citations: Number(p.citations ?? p.citationCount ?? 0) || 0,
-          url: p.pdf_link || p.url || (p.doi ? `https://doi.org/${p.doi}` : ''),
-          tags: p.tags || p.topics || []
-        }));
-
-        // derive & save
-        state.metrics  = computeMetricsFromPublications(state.publications);
-        state.topCited = [...state.publications].sort((a,b)=>(b.citations||0)-(a.citations||0)).slice(0,5);
-        state.topics   = [...new Set(state.publications.flatMap(p => p.tags || []))].slice(0,12);
-
-        saveState?.(); // if your file exposes saveState()
+    try{
+      const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+      const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+      const r = await fetch(`${API}/publications`, { cache:'no-store' });
+      if (r.ok){
+        const saved = await r.json();
+        // If you want saved manual set to override immediately:
+        if (saved?.publications?.length){
+          state.publications = saved.publications;
+          state.metrics  = saved.metrics  || state.metrics;
+          state.topics   = saved.topics   || state.topics;
+          state.topCited = saved.topCited || state.topCited;
+        }
       }
-    } catch (e) {
-      console.warn('Aggregate fetch failed; showing cached/local only', e);
-    }
+    }catch(e){}
 
     ensureTinyButtons?.();
     wireEditToggle?.();
