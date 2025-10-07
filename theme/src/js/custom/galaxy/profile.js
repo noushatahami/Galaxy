@@ -514,6 +514,10 @@
         // Save cv_id for other pages (e.g., Publications verify)
         if (data.cv_id) localStorage.setItem('galaxy_cv_id', data.cv_id);
 
+        localStorage.removeItem('galaxy_grants');
+        localStorage.removeItem('galaxy_projects');
+        localStorage.removeItem('galaxy_compliance');
+
         const p = data.profile || {};
         // also include the socials typed by the user so UI updates immediately
         p.socials = p.socials || {};

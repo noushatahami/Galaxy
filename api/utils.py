@@ -14,6 +14,8 @@ GPT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 
 def extract_cv_data(cv_text: str) -> dict:
     """Use OpenAI to extract structured info from CV text in a strict schema."""
+    # NOTE: schema expanded so Grants / Projects / Compliance always have the
+    # fields your pages bind to.
     schema_hint = {
         "profile": {
             "name": "",
@@ -23,10 +25,63 @@ def extract_cv_data(cv_text: str) -> dict:
             "education": [],
             "memberships": []
         },
-        "publications": {"publications": []},
-        "projects": [],
-        "grants": {},
-        "compliance": {}
+        "publications": {
+            "publications": [
+                {"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}
+            ]
+        },
+
+        # Projects is an OBJECT (not a list) with all tiles your UI renders
+        "projects": {
+            "project_snapshot": {
+                "status": "",
+                "days_remaining": 0,
+                "title": "",
+                "description": "",
+                "donut_percentage": 0,
+                "tags": [{"label": ""}]
+            },
+            "project_status": {
+                "counts": {"active": 0, "on_hold": 0, "stopped": 0},
+                "projects": [{"label": "", "status": "", "selected": False}]
+            },
+            "impact_points": {"total": "", "change": "", "note": ""},
+            "total_budget": {"amount": "", "change": "", "note": ""},
+            "next_deadline": {"label": "", "date": ""},
+            "messages": [{"name": "", "time_ago": "", "subject": ""}],
+            "latest_activity": [{"name": "", "action": "", "time_ago": "", "avatar": "", "approved": False}]
+        },
+
+        # Grants is an OBJECT with subkeys the Grants page needs
+        "grants": {
+            "grants": [
+                {
+                    "id": "",
+                    "title": "",
+                    "agency": "",
+                    "type": "",
+                    "duration": "",
+                    "amountAwarded": 0,
+                    "amountReceived": 0,
+                    "amountSpent": 0,
+                    "awardedAt": "",
+                    "tags": []
+                }
+            ],
+            "reports": { "grantId": "", "nextDue": "", "lastSubmitted": "" },
+            "breakdown": { "categories": [ {"label":"", "value":0} ], "total": 0 },
+            "keywords": []
+        },
+
+        # Compliance is an OBJECT with the cards your page renders
+        "compliance": {
+            "summary": {"compliant": 0, "pending": 0, "non_compliant": 0},
+            "quick_actions": [],
+            "key_contacts": [{"name": "", "role": "", "image": ""}],
+            "checkpoints": [{"title": "", "status": "", "last_reviewed": ""}],
+            "audits": [{"name": "", "date": "", "score": "", "tags": [""]}],
+            "notes": []
+        }
     }
 
     prompt = f"""
@@ -39,8 +94,13 @@ Schema (use these exact keys; for missing values use empty strings/arrays/object
 Rules:
 - profile.name must be a single string (author's full name).
 - profile.research_areas must be an array of short topic strings.
-- publications.publications is an array of items: 
-  {{ "title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":"" }}
+- publications.publications is an array of items:
+  {{"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}}
+- Projects MUST be an object with keys shown above (not an array).
+- Grants MUST include 'grants' array and the sub-objects ('reports','breakdown','keywords').
+  * Normalize amounts to digits-only numbers when possible.
+  * awardedAt should be YYYY-MM-DD if present, else "".
+- Compliance MUST include summary/quick_actions/key_contacts/checkpoints/audits/notes.
 - Do not invent items; if not in CV, leave empty arrays/zeros/empty strings.
 - Titles and names should be as they appear in the CV.
 
@@ -57,17 +117,18 @@ CV TEXT (truncate to 15k chars):
         data = completion.choices[0].message.content
         parsed = json.loads(data)
 
-        # Normalize: ensure all keys exist so the UI never sees undefined
+        # -------- Normalize: ensure all keys exist so the UI never sees undefined --------
         def ensure(k, default):
             if k not in parsed or parsed[k] is None:
                 parsed[k] = default
+
         ensure("profile", schema_hint["profile"])
         ensure("publications", {"publications": []})
-        ensure("projects", [])
+        ensure("projects", {})
         ensure("grants", {})
         ensure("compliance", {})
 
-        # Ensure required subkeys
+        # Profile defaults
         prof = parsed.get("profile") or {}
         prof.setdefault("socials", {"LinkedIn": "", "Google Scholar": "", "X": ""})
         prof.setdefault("research_areas", [])
@@ -76,19 +137,90 @@ CV TEXT (truncate to 15k chars):
         prof.setdefault("memberships", [])
         parsed["profile"] = prof
 
+        # Publications defaults
         pubs = parsed.get("publications") or {}
         pubs.setdefault("publications", [])
         parsed["publications"] = pubs
 
+        # Projects defaults (object shape your UI expects)
+        proj = parsed.get("projects") or {}
+        proj.setdefault("project_snapshot", {
+            "status":"", "days_remaining":0, "title":"", "description":"",
+            "donut_percentage":0, "tags":[]
+        })
+        proj.setdefault("project_status", {
+            "counts":{"active":0,"on_hold":0,"stopped":0},
+            "projects":[]
+        })
+        proj.setdefault("impact_points", {"total":"", "change":"", "note":""})
+        proj.setdefault("total_budget", {"amount":"", "change":"", "note":""})
+        proj.setdefault("next_deadline", {"label":"", "date":""})
+        proj.setdefault("messages", [])
+        proj.setdefault("latest_activity", [])
+        parsed["projects"] = proj
+
+        # Grants defaults (object shape your UI expects)
+        gr = parsed.get("grants") or {}
+        gr.setdefault("grants", [])
+        gr.setdefault("reports", {"grantId": "", "nextDue": "", "lastSubmitted": ""})
+        gr.setdefault("breakdown", {"categories": [], "total": 0})
+        gr.setdefault("keywords", [])
+        # Best-effort numeric coercion for amounts inside grants.grants
+        for g in gr["grants"]:
+            for k in ("amountAwarded","amountReceived","amountSpent"):
+                v = g.get(k)
+                if isinstance(v, str):
+                    # strip currency symbols and commas
+                    num = re.sub(r"[^\d.-]", "", v)
+                    try:
+                        g[k] = int(float(num)) if num else 0
+                    except Exception:
+                        g[k] = 0
+                elif v is None:
+                    g[k] = 0
+        parsed["grants"] = gr
+
+        # Compliance defaults (object shape your UI expects)
+        comp = parsed.get("compliance") or {}
+        comp.setdefault("summary", {"compliant":0, "pending":0, "non_compliant":0})
+        comp.setdefault("quick_actions", [])
+        comp.setdefault("key_contacts", [])
+        comp.setdefault("checkpoints", [])
+        comp.setdefault("audits", [])
+        comp.setdefault("notes", [])
+        parsed["compliance"] = comp
+
         return parsed
+
     except Exception as e:
         print("OpenAI extraction error:", e)
+        # Return full default shape so pages still render empty but valid
         return {
             "profile": schema_hint["profile"],
             "publications": {"publications": []},
-            "projects": [],
-            "grants": {},
-            "compliance": {}
+            "projects": {
+                "project_snapshot": {"status":"", "days_remaining":0, "title":"", "description":"", "donut_percentage":0, "tags":[]},
+                "project_status": {"counts":{"active":0,"on_hold":0,"stopped":0}, "projects":[]},
+                "impact_points": {"total":"", "change":"", "note":""},
+                "total_budget": {"amount":"", "change":"", "note":""},
+                "next_deadline": {"label":"", "date":""},
+                "messages": [],
+                "latest_activity": []
+            },
+            "grants": {
+                "grants": [],
+                "reports": {"grantId": "", "nextDue": "", "lastSubmitted": ""},
+                "breakdown": {"categories": [], "total": 0},
+                "keywords": []
+            },
+            "compliance": {
+                "summary": {"compliant":0, "pending":0, "non_compliant":0},
+                "quick_actions": [],
+                "key_contacts": [],
+                "checkpoints": [],
+                "audits": [],
+                "notes": []
+            }
         }
 
 # ------------- PDF helpers -------------
@@ -147,7 +279,6 @@ def guess_research_areas(txt: str) -> List[str]:
 
 # ------------- Semantic Scholar helpers -------------
 
-import os
 SS_BASE = "https://api.semanticscholar.org/graph/v1"
 SS_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip()
 SS_HEADERS = {"x-api-key": SS_KEY} if SS_KEY else {}
@@ -232,8 +363,6 @@ def verify_publications_against_cv(pubs: List[Dict], cv_text: str) -> Tuple[List
 
 # --- CV-aware + stable S2 author resolution ---
 
-from rapidfuzz import fuzz
-
 AFFIL_HINT_WORDS = [
     "university","institute","laboratory","lab","college","department",
     "centre","center","school","faculty","hospital"
@@ -275,7 +404,7 @@ def resolve_s2_author_id_stable(name: str, cv_text: str, max_candidates: int = 5
     """
     debug = {"candidates": []}
     try:
-        # Step 1: candidate list by name (no unsupported fields param)
+        # Step 1: candidate list by name
         r = requests.get(
             f"{SS_BASE}/author/search",
             params={"query": name, "limit": max_candidates},

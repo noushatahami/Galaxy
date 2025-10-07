@@ -1,11 +1,11 @@
-// theme/src/js/custom/galaxy/compliance.js
 (() => {
   /* ----------------------- utils ----------------------- */
   const $  = (s, r=document) => r.querySelector(s);
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
   const H  = (t, c='', html='') => { const n=document.createElement(t); if(c)n.className=c; if(html!=null)n.innerHTML=html; return n; };
   const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const API = (location.hostname === 'localhost') ? 'http://127.0.0.1:3001/api' : '/api';
+  const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.hostname === '0.0.0.0')
+    ? 'http://127.0.0.1:3001/api' : '/api';
   const fmtDate = (d) => {
     if (!d) return '—';
     const dt = new Date(d); return isNaN(dt) ? String(d) : dt.toLocaleDateString();
@@ -24,47 +24,84 @@
 
   /* ----------------------- persistence ----------------------- */
   function save(){ localStorage.setItem('galaxy_compliance', JSON.stringify(state)); }
-  async function load(){
-    // local first
-    const local = localStorage.getItem('galaxy_compliance');
-    if (local) {
-      try { Object.assign(state, JSON.parse(local)); return; } catch {}
+  async function load() {
+    const hasCV = !!localStorage.getItem('galaxy_cv_id');
+
+    // 1) Soft-load cache first (but don't trust it if a new CV was uploaded)
+    const cached = localStorage.getItem('galaxy_compliance');
+    if (cached && !hasCV) {
+      try { Object.assign(state, JSON.parse(cached)); } catch {}
     }
-    // API fallback
+
+    // 2) Prefer API (CV-backed). Any successful fetch overrides current state.
     try {
-      const [rootP, cpsP, audP, notesP, sumP, qaP, kcP] = await Promise.allSettled([
-        fetch(`${API}/compliance`),
+      // unified object first
+      const rootResp = await fetch(`${API}/compliance`);
+      if (rootResp.ok) {
+        const root = await rootResp.json();
+        if (root.summary)       state.summary = root.summary;
+        if (Array.isArray(root.quick_actions)) state.quickActions = root.quick_actions;
+        if (Array.isArray(root.key_contacts))  state.keyContacts  = root.key_contacts;
+        if (Array.isArray(root.checkpoints))   state.checkpoints  = root.checkpoints;
+        if (Array.isArray(root.audits))        state.audits       = root.audits;
+        if (Array.isArray(root.notes))         state.notes        = root.notes;
+      }
+
+      // granular endpoints (override pieces if they exist)
+      const [summary, checkpoints, audits, notes, actions, contacts] = await Promise.allSettled([
+        fetch(`${API}/compliance/summary`),
         fetch(`${API}/compliance/checkpoints`),
         fetch(`${API}/compliance/audits`),
         fetch(`${API}/compliance/notes`),
-        fetch(`${API}/compliance/summary`),
         fetch(`${API}/compliance/quick-actions`),
         fetch(`${API}/compliance/contacts`)
       ]);
-      const root = (rootP.status==='fulfilled' && rootP.value.ok) ? await rootP.value.json() : {};
-      async function readOK(p){ return (p.status==='fulfilled' && p.value.ok) ? p.value.json() : null; }
-      const cps = await readOK(cpsP), aud = await readOK(audP), nts = await readOK(notesP), sum = await readOK(sumP), qa = await readOK(qaP), kc = await readOK(kcP);
-      state.checkpoints = cps?.items || cps || root.checkpoints || [];
-      state.audits      = aud?.items || aud || root.audits || [];
-      state.notes       = nts?.items || nts || root.notes || [];
-      state.summary     = sum || root.summary || { compliant:0, pending:0, noncompliant:0 };
-      state.quickActions= qa?.items  || qa  || root.quickActions || [];
-      state.contacts    = kc?.items  || kc  || root.contacts || [];
-      return;
-    } catch {}
-    // static last
-    try {
-      const r = await fetch('data/compliance.json', { cache:'no-store' });
-      if (r.ok) {
-        const d = await r.json();
-        state.checkpoints = d.checkpoints || [];
-        state.audits      = d.audits || [];
-        state.notes       = d.notes || [];
-        state.summary     = d.summary || { compliant:0, pending:0, noncompliant:0 };
-        state.quickActions= d.quickActions || [];
-        state.contacts    = d.contacts || [];
+
+      if (summary.status==='fulfilled' && summary.value.ok) {
+        state.summary = await summary.value.json();
       }
-    } catch {}
+      if (checkpoints.status==='fulfilled' && checkpoints.value.ok) {
+        const d = await checkpoints.value.json();
+        state.checkpoints = d.items || d || [];
+      }
+      if (audits.status==='fulfilled' && audits.value.ok) {
+        const d = await audits.value.json();
+        state.audits = d.items || d || [];
+      }
+      if (notes.status==='fulfilled' && notes.value.ok) {
+        const d = await notes.value.json();
+        state.notes = d.items || d || [];
+      }
+      if (actions.status==='fulfilled' && actions.value.ok) {
+        const d = await actions.value.json();
+        state.quickActions = d.items || d || [];
+      }
+      if (contacts.status==='fulfilled' && contacts.value.ok) {
+        const d = await contacts.value.json();
+        state.keyContacts = d.items || d || [];
+      }
+    } catch {
+      // swallow; we'll try static next
+    }
+
+    // 3) Static fallback
+    if (!state.summary && !state.checkpoints?.length && !state.audits?.length) {
+      try {
+        const r = await fetch('data/compliance.json', { cache: 'no-store' });
+        if (r.ok) Object.assign(state, await r.json());
+      } catch {}
+    }
+
+    // 4) Final safety defaults so UI never breaks
+    state.summary = state.summary || { compliant: 0, pending: 0, noncompliant: 0 };
+    state.checkpoints = Array.isArray(state.checkpoints) ? state.checkpoints : [];
+    state.audits      = Array.isArray(state.audits)      ? state.audits      : [];
+    state.notes       = Array.isArray(state.notes)       ? state.notes       : [];
+    state.quickActions= Array.isArray(state.quickActions)? state.quickActions: [];
+    state.keyContacts = Array.isArray(state.keyContacts) ? state.keyContacts : [];
+
+    // 5) Cache the good stuff for snappy reloads
+    try { localStorage.setItem('galaxy_compliance', JSON.stringify(state)); } catch {}
   }
 
   /* ----------------------- renderers ----------------------- */

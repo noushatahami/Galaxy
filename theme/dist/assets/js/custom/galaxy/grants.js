@@ -1,11 +1,14 @@
-// theme/src/js/custom/galaxy/grants.js
 (() => {
   /* ----------------------- utils ----------------------- */
   const $  = (s, r=document) => r.querySelector(s);
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
   const H  = (t, c='', inner='') => { const n=document.createElement(t); if(c)n.className=c; if(inner!=null)n.innerHTML=inner; return n; };
   const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const API = location.hostname === 'localhost' ? 'http://127.0.0.1:3001/api' : '/api';
+  // DEV/PROD API base (treat localhost, 127.0.0.1, 0.0.0.0 as local)
+  const API = (['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname))
+    ? 'http://127.0.0.1:3001/api'
+    : '/api';
+
   const fmtMoney = (n) => (n==null || n===''
     ? '—'
     : Number(n).toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 })
@@ -26,11 +29,15 @@
   /* ----------------------- persistence ----------------------- */
   function save() { localStorage.setItem('galaxy_grants', JSON.stringify(state)); }
   async function load() {
+    const hasCV = !!localStorage.getItem('galaxy_cv_id');
+
+    // 1) Soft-load local cache (no early return)
     const local = localStorage.getItem('galaxy_grants');
-    if (local) {
-      try { Object.assign(state, JSON.parse(local)); return; } catch {}
+    if (local && !hasCV) {
+      try { Object.assign(state, JSON.parse(local)); } catch {}
     }
-    // Optional: try API, then static
+
+    // 2) Prefer API (CV-backed). Any successful fetch overrides cache/state.
     try {
       const [gr, sm, br, rp, kw] = await Promise.allSettled([
         fetch(`${API}/grants`),
@@ -39,9 +46,20 @@
         fetch(`${API}/grants/reports`),
         fetch(`${API}/grants/keywords`)
       ]);
+
       if (gr.status==='fulfilled' && gr.value.ok) {
         const data = await gr.value.json();
         state.grants = data.grants || data || [];
+        if (data.total_grants_awarded?.amount!=null && data.available_budget?.amount!=null) {
+          state.totals = {
+            totalAwarded: Number(data.total_grants_awarded.amount)||0,
+            availableBudget: Number(data.available_budget.amount)||0
+          };
+        }
+        if (data.last_awarded_grant) state.lastAwarded = data.last_awarded_grant;
+        if (data.breakdown) state.breakdown = data.breakdown;
+        if (data.reports)   state.reports   = data.reports;
+        if (data.keywords)  state.keywords  = data.keywords;
       }
       if (sm.status==='fulfilled' && sm.value.ok) {
         const s = await sm.value.json();
@@ -51,36 +69,34 @@
         if (s.lastAwarded) state.lastAwarded = s.lastAwarded;
       }
       if (br.status==='fulfilled' && br.value.ok) {
-        const b = await br.value.json();
-        state.breakdown = b || state.breakdown;
+        state.breakdown = await br.value.json() || state.breakdown;
       }
       if (rp.status==='fulfilled' && rp.value.ok) {
-        const r = await rp.value.json();
-        state.reports = r || state.reports;
+        state.reports = await rp.value.json() || state.reports;
       }
       if (kw.status==='fulfilled' && kw.value.ok) {
         const k = await kw.value.json();
         state.keywords = k.keywords || k || state.keywords;
       }
-      // Fallback derivations
-      if (!state.totals || state.totals.totalAwarded==null) deriveTotals();
-      if (!state.lastAwarded) deriveLastAwarded();
-      if (!state.keywords?.length) deriveKeywords();
-      return;
     } catch {}
-    // Static fallback
-    try {
-      const r = await fetch('data/grants.json', { cache:'no-store' });
-      if (r.ok) {
-        const d = await r.json();
-        state.grants      = d.grants || d || [];
-        state.totals      = d.totals || state.totals;
-        state.lastAwarded = d.lastAwarded || state.lastAwarded;
-        state.breakdown   = d.breakdown || state.breakdown;
-        state.reports     = d.reports || state.reports;
-        state.keywords    = d.keywords || state.keywords;
-      }
-    } catch {}
+
+    // 3) Static fallback
+    if (!state.grants?.length) {
+      try {
+        const r = await fetch('data/grants.json', { cache:'no-store' });
+        if (r.ok) {
+          const d = await r.json();
+          state.grants      = d.grants || d || [];
+          state.totals      = d.totals || state.totals;
+          state.lastAwarded = d.lastAwarded || state.lastAwarded;
+          state.breakdown   = d.breakdown || state.breakdown;
+          state.reports     = d.reports || state.reports;
+          state.keywords    = d.keywords || state.keywords;
+        }
+      } catch {}
+    }
+
+    // 4) Derive missing bits
     if (!state.totals || state.totals.totalAwarded==null) deriveTotals();
     if (!state.lastAwarded) deriveLastAwarded();
     if (!state.keywords?.length) deriveKeywords();
@@ -202,6 +218,7 @@
     });
   }
 
+  // ONE tiny edit button per card (like profile)
   function ensureTinyButtons() {
     const cfgs = [
       { anchor:'#total_grants_awarded', title:'Edit Totals',          build: buildTotalsModal },
@@ -397,9 +414,9 @@
 
   /* ----------------------- boot ----------------------- */
   document.addEventListener('DOMContentLoaded', async () => {
-    await load();
-    ensureTinyButtons();
-    wireEditToggle();
-    renderAll();
+    await load();            // pulls from API (CV-backed) or local/static
+    ensureTinyButtons();     // one tiny Edit per card (like profile)
+    wireEditToggle();        // toggles the tiny buttons
+    renderAll();             // paint
   });
 })();

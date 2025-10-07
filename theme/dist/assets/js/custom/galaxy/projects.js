@@ -5,7 +5,12 @@
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
   const H  = (t, c='', html='') => { const n=document.createElement(t); if(c)n.className=c; if(html!=null)n.innerHTML=html; return n; };
   const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  const API = location.hostname === 'localhost' ? 'http://127.0.0.1:3001/api' : '/api';
+
+  // DEV/PROD API base — treat localhost, 127.0.0.1, 0.0.0.0 as local
+  const API = (['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname))
+    ? 'http://127.0.0.1:3001/api'
+    : '/api';
+
   const fmtMoney = (n) => (n==null || n===''
     ? '—'
     : Number(n).toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 })
@@ -48,21 +53,94 @@
 
   /* ----------------------- persistence ----------------------- */
   function save() { localStorage.setItem('galaxy_projects', JSON.stringify(state)); }
+
   async function load() {
+    const hasCV = !!localStorage.getItem('galaxy_cv_id');
+
+    // 1) Soft-load cache first (only if no CV present)
     const local = localStorage.getItem('galaxy_projects');
-    if (local) {
-      try { Object.assign(state, JSON.parse(local)); return; } catch {}
+    if (local && !hasCV) {
+      try { Object.assign(state, JSON.parse(local)); } catch {}
     }
 
-    // Optional API (ignore failures gracefully)
+    // 2) Prefer unified API object (CV-backed)
     try {
+      const rootResp = await fetch(`${API}/projects`);
+      if (rootResp.ok) {
+        const root = await rootResp.json();
+
+        const impact = root.impact_points || root.impact;
+        if (impact) {
+          state.impact = {
+            total: Number(impact.total ?? 0) || 0,
+            change: impact.change ?? '',
+            note: impact.note ?? ''
+          };
+        }
+        const budget = root.total_budget || root.budget;
+        if (budget) {
+          state.budget = {
+            amount: Number(budget.amount ?? 0) || 0,
+            change: budget.change ?? '',
+            note: budget.note ?? ''
+          };
+        }
+
+        if (root.project_status && Array.isArray(root.project_status.projects)) {
+          state.projects = root.project_status.projects.map(p => ({
+            title: p.label || p.title || 'Untitled',
+            status: p.status || 'active'
+          }));
+        } else if (Array.isArray(root.projects)) {
+          state.projects = root.projects.map(p => ({
+            title: p.title || p.label || 'Untitled',
+            status: p.status || 'active'
+          }));
+        }
+
+        const snap = root.project_snapshot || root.snapshot;
+        if (snap) {
+          state.snapshot = {
+            status: snap.status || '',
+            statusColor: snap.statusColor || '#20E3B2',
+            days: Number(snap.days || snap.days_remaining || 0) || 0,
+            title: snap.title || '',
+            desc: snap.description || snap.desc || '',
+            tags: (snap.tags || []).map(t => typeof t === 'string' ? t : (t.label || '')).filter(Boolean),
+            donut: (snap.donut_percentage != null ? Number(snap.donut_percentage)
+                                                  : (snap.donut != null ? Number(snap.donut) : null))
+          };
+        }
+
+        if (Array.isArray(root.latest_activity)) {
+          state.latestActivity = root.latest_activity.map(a => ({
+            name: a.name || '',
+            action: a.action || '',
+            when: a.time_ago || a.when || '',
+            avatarUrl: a.avatar || ''
+          }));
+        }
+        if (Array.isArray(root.messages)) {
+          state.messages = root.messages.map(m => ({
+            from: m.name || m.from || '',
+            preview: m.subject || m.preview || '',
+            avatarUrl: m.avatar || ''
+          }));
+        }
+        if (root.next_deadline || root.deadline) {
+          const dl = root.next_deadline || root.deadline;
+          state.deadline = { label: dl.label || '', date: dl.date || '' };
+        }
+      }
+
+      // 3) Optional granular overrides (if your backend exposes them)
       const [tiles, projects, snapshot, activity, messages, deadline] = await Promise.allSettled([
-        fetch(`${API}/projects/tiles`),      // { impact:{total,change,note}, budget:{amount,change,note} }
-        fetch(`${API}/projects`),            // { projects:[...] }
-        fetch(`${API}/projects/snapshot`),   // snapshot object
-        fetch(`${API}/projects/activity`),   // { items:[...] }
-        fetch(`${API}/projects/messages`),   // { items:[...] }
-        fetch(`${API}/projects/deadline`)    // { label, date }
+        fetch(`${API}/projects/tiles`),
+        fetch(`${API}/projects`),          // some backends return list directly
+        fetch(`${API}/projects/snapshot`),
+        fetch(`${API}/projects/activity`),
+        fetch(`${API}/projects/messages`),
+        fetch(`${API}/projects/deadline`)
       ]);
 
       if (tiles.status==='fulfilled' && tiles.value.ok) {
@@ -72,7 +150,8 @@
       }
       if (projects.status==='fulfilled' && projects.value.ok) {
         const p = await projects.value.json();
-        state.projects = p.projects || p || [];
+        if (Array.isArray(p.projects))      state.projects = p.projects;
+        else if (Array.isArray(p))          state.projects = p;
       }
       if (snapshot.status==='fulfilled' && snapshot.value.ok) {
         state.snapshot = await snapshot.value.json();
@@ -88,14 +167,15 @@
       if (deadline.status==='fulfilled' && deadline.value.ok) {
         state.deadline = await deadline.value.json();
       }
-      return;
     } catch {}
 
-    // Static fallback (optional): theme/dist/data/projects.json
-    try {
-      const r = await fetch('data/projects.json', { cache:'no-store' });
-      if (r.ok) Object.assign(state, await r.json());
-    } catch {}
+    // 4) Static fallback
+    if (!state.projects?.length) {
+      try {
+        const r = await fetch('data/projects.json', { cache:'no-store' });
+        if (r.ok) Object.assign(state, await r.json());
+      } catch {}
+    }
   }
 
   /* ----------------------- renderers ----------------------- */
@@ -162,7 +242,7 @@
       tg.innerHTML = '';
       const arr = s.tags || [];
       if (!arr.length) tg.appendChild(H('span','text-gray-400','—'));
-      else arr.forEach(t => tg.appendChild(H('span','badge bg-success bg-opacity-20 text-success', t)));
+      else arr.forEach(t => tg.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', t)));
     }
     if (dn) dn.textContent = fmtPct(s.donut);
   }
