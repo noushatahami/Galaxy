@@ -90,7 +90,84 @@ def _get_from_parsed(cv_id: Optional[str], key: str, default):
         return default
     return (STORE[cv_id].get("parsed") or {}).get(key) or default
 
-# ---------- normalizers for non-profile sections ----------
+# ---------- normalizers for pages ----------
+def _norm_profile(p: dict | None, *, photo_url_default: str = "") -> dict:
+    p = p or {}
+    # legacy/gpt keys we might see:
+    socials_in = p.get("social_media") or p.get("socials") or {}
+    socials = {}
+    if isinstance(socials_in, dict):
+        # normalize well-known keys
+        for k, v in socials_in.items():
+            if not v: continue
+            key = k.strip()
+            if key.lower() in {"twitter","x"}: key = "Twitter"
+            if key.lower() in {"linkedin","linkedin url"}: key = "LinkedIn"
+            if key.lower() in {"google scholar","scholar"}: key = "Google Scholar"
+            socials[key] = v
+
+    # partners: accept either array of {type,count} or already-an-object
+    partners_in = p.get("partners") or {}
+    if isinstance(partners_in, list):
+        partners = {}
+        for item in partners_in:
+            t = (item.get("type") or "").strip()
+            c = item.get("count") or 0
+            if t:
+                partners[t] = int(str(c).replace(",", "").strip() or 0)
+    elif isinstance(partners_in, dict):
+        partners = {k: int(str(v).replace(",", "").strip() or 0) for k, v in partners_in.items()}
+    else:
+        partners = {}
+
+    def _arr(key):
+        v = p.get(key) or []
+        if isinstance(v, list): return [str(x).strip() for x in v if str(x).strip()]
+        return []
+
+    def _awards():
+        out = []
+        for a in p.get("awards") or []:
+            if not isinstance(a, dict): continue
+            out.append({"year": (a.get("year") or "").strip(), "title": (a.get("title") or "").strip()})
+        return out
+
+    def _patents():
+        out = []
+        for a in p.get("patents") or []:
+            if not isinstance(a, dict): continue
+            inv = a.get("inventors")
+            if isinstance(inv, str): inv = [s.strip() for s in inv.split(",") if s.strip()]
+            if not isinstance(inv, list): inv = []
+            out.append({
+                "title": (a.get("title") or "").strip(),
+                "number": (a.get("number") or "").strip(),
+                "inventors": inv,
+                "filed": (a.get("filed") or "").strip(),
+                "status": (a.get("status") or "").strip(),
+            })
+        return out
+
+    photo_url = (p.get("photo_url") or "").strip()
+    if not photo_url: photo_url = photo_url_default
+
+    return {
+        "name": (p.get("name") or "").strip(),
+        "photo_url": photo_url,
+        "social_media": socials,
+        "media_mentions": _arr("media_mentions"),
+        "research_areas": _arr("research_areas"),
+        "awards": _awards(),
+        "patents": _patents(),
+        "positions": _arr("positions"),
+        "affiliations": _arr("affiliations"),
+        "education": _arr("education"),
+        "memberships": _arr("memberships"),
+        "mentors": _arr("mentors"),
+        "colleagues": _arr("colleagues"),
+        "keywords": _arr("keywords"),
+        "partners": partners or {"Academic Partners": 0, "Industry Partners": 0},
+    }
 
 def _norm_projects(p: dict | None) -> dict:
     p = p or {}
@@ -198,32 +275,20 @@ async def ingest_cv(
     parsed = extract_cv_data(text) or {}
     prof = parsed.get("profile", parsed) if isinstance(parsed, dict) else {}
 
-    # socials merged with typed values
-    socials = {**(prof.get("socials") or {}), **{
+    # Merge typed socials into the incoming profile
+    typed_socials = {k:v for k,v in {
         "LinkedIn": linkedin_url,
         "Google Scholar": scholar_url,
-        "X": x_url,
-    }}
-    socials = {k: v for k, v in socials.items() if v}
+        "X": x_url,   # we’ll remap X→Twitter in normalizer
+    }.items() if v}
 
-    # normalize arrays for profile
-    norm_research = _coerce_str_list(prof.get("research_areas")) or guess_research_areas(text)
-    norm_positions = _coerce_str_list(prof.get("positions")) or grep_lines(
-        text, ["Professor", "Scientist", "Engineer", "Director", "Lecturer"], 12
-    )
-    norm_education = _coerce_str_list(prof.get("education")) or grep_lines(
-        text, ["PhD", "Master", "Bachelor", "Doctor"], 12
-    )
-    norm_members = _coerce_str_list(prof.get("memberships"))
+    prof_in = dict(prof or {})
+    prof_in["socials"] = {**(prof_in.get("socials") or {}), **typed_socials}
 
-    profile = Profile(
-        name=prof.get("name") or first_reasonable_name(text) or cv.filename.rsplit(".", 1)[0],
-        socials=socials,
-        research_areas=norm_research,
-        positions=norm_positions,
-        education=norm_education,
-        memberships=norm_members,
-    ).model_dump()
+    # Build normalized profile to your schema
+    profile = _norm_profile(prof_in, photo_url_default="assets/media/avatars/300-1.jpg")
+    if "X" in profile["social_media"]:  # remap to Twitter key for final shape
+        profile["social_media"]["Twitter"] = profile["social_media"].pop("X")
 
     # normalize the other sections for immediate serving
     projects_norm = _norm_projects(parsed.get("projects"))

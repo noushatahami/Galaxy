@@ -25,7 +25,9 @@
       patents: [],                  // [{title,number,inventors[],filed,status}]
       mentors: [],                  // [string]
       colleagues: [],               // [string]
-      partners: [],                 // [{type,count}]
+      partners: { "Academic Partners": 0, "Industry Partners": 0 }, // object, not array
+      affiliations: [],  // <-- add (schema field)
+      keywords: [],       // <-- add (schema field)
       positions: [],                // [string]
       education: [],                // [string]
       memberships: []               // [string]
@@ -41,7 +43,9 @@
     p.patents        = p.patents        || [];
     p.mentors        = p.mentors        || [];
     p.colleagues     = p.colleagues     || [];
-    p.partners       = Array.isArray(p.partners) ? p.partners : [];
+    p.partners = (p.partners && typeof p.partners === 'object' && !Array.isArray(p.partners)) ? p.partners : {"Academic Partners":0,"Industry Partners":0};
+    p.affiliations = p.affiliations || [];
+    p.keywords = p.keywords || [];
     p.positions      = p.positions      || [];
     p.education      = p.education      || [];
     p.memberships    = p.memberships    || [];
@@ -70,21 +74,23 @@
   }
 
   function toProfilePayload(){
-    // Map your state shape to API profile fields
     const p = state.profile || {};
     return {
       name: p.name || undefined,
-      socials: p.social_media || {},
+      photo_url: p.photo_url || "",
+      social_media: p.social_media || {},
       media_mentions: p.media_mentions || [],
       research_areas: p.research_areas || [],
       awards: p.awards || [],
       patents: p.patents || [],
+      positions: p.positions || [],
+      affiliations: p.affiliations || [],   // NEW
+      education: p.education || [],
+      memberships: p.memberships || [],
       mentors: p.mentors || [],
       colleagues: p.colleagues || [],
-      partners: p.partners || [],
-      positions: p.positions || [],
-      education: p.education || [],
-      memberships: p.memberships || []
+      keywords: p.keywords || [],          // NEW
+      partners: p.partners || {"Academic Partners":0,"Industry Partners":0}
     };
   }
 
@@ -152,11 +158,13 @@
     renderPatents();
     renderSimpleList('#mentors_list','mentors');
     renderSimpleList('#colleagues_list','colleagues');
-    // partners is a special layout
     const pv = $('#partners_view');
     if (pv) {
-      const arr = state.profile.partners || [];
-      pv.innerHTML = arr.length ? arr.map(p=>`<li><span class="fw-semibold">${p.count}</span> ${p.type}</li>`).join('') : '<li class="text-muted">—</li>';
+      const obj = state.profile.partners || {};
+      const entries = Object.entries(obj);
+      pv.innerHTML = entries.length
+        ? entries.map(([label, count]) => `<li><span class="fw-semibold">${count}</span> ${label}</li>`).join('')
+        : '<li class="text-muted">—</li>';
     }
     renderSimpleList('#positions_list','positions');
     renderSimpleList('#education_list','education');
@@ -467,28 +475,41 @@
   }
 
   function buildPartnersModal() {
-    const {wrap, box} = labeledSection('Type + Count (e.g., Academic • 5)');
+    const {wrap, box} = labeledSection('Partner type (key) + count (value)');
     const list = H('div','d-flex flex-column gap-2','');
-    const row = (type='', count='') => {
+
+    const row = (label='', count='') => {
       const r = H('div','d-flex gap-2 align-items-center','');
       r.innerHTML = `
-        <input class="form-control" placeholder="Type" value="${type}">
+        <input class="form-control" placeholder="Label (e.g., Academic Partners)" value="${label}">
         <input class="form-control" placeholder="Count" value="${count}">
         <button class="btn btn-light-danger">Remove</button>`;
       r.lastElementChild.addEventListener('click',()=>r.remove());
       return r;
     };
-    (state.profile.partners||[]).forEach(p => list.appendChild(row(p.type||'', p.count||'')));
-    const add = H('button','btn btn-light mt-3','+ Add partner'); add.addEventListener('click',()=>list.appendChild(row()));
+
+    const entries = Object.entries(state.profile.partners || {});
+    if (entries.length === 0) list.appendChild(row('Academic Partners', '0'));
+    entries.forEach(([k,v]) => list.appendChild(row(k, v)));
+
+    const add = H('button','btn btn-light mt-3','+ Add pair');
+    add.addEventListener('click',()=>list.appendChild(row()));
+
     box.appendChild(list); box.appendChild(add);
+
     const onSave = () => {
-      const next=[]; list.querySelectorAll(':scope > div').forEach(d=>{
-        const [t,c]=d.querySelectorAll('input'); const type=t.value.trim(), count=c.value.trim();
-        if (type && count) next.push({type, count});
+      const out = {};
+      list.querySelectorAll(':scope > div').forEach(d=>{
+        const [kEl,vEl] = d.querySelectorAll('input');
+        const k = (kEl?.value || '').trim();
+        const vRaw = (vEl?.value || '').trim();
+        if (!k) return;
+        const v = parseInt(vRaw.replace(/,/g,''),10);
+        out[k] = Number.isFinite(v) ? v : 0;
       });
-      state.profile.partners = next;
+      state.profile.partners = out;
     };
-    return [wrap,onSave];
+    return [wrap, onSave];
   }
 
   /* ---------------- avatar & edit toggle ---------------- */
