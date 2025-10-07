@@ -46,9 +46,11 @@
 
 							<!--begin::Sidebar toggle-->
 							<div id="kt_app_sidebar_toggle" class="app-sidebar-toggle btn btn-sm btn-icon btn-color-gray-600 btn-active-color-dark me-n2 d-none d-lg-flex" data-kt-toggle="true" data-kt-toggle-state="active" data-kt-toggle-target="body" data-kt-toggle-name="app-sidebar-minimize" onclick="toggleSidebarIcon(this)" title="Click to toggle the sidebar">
-								<i class="ki-duotone ki-star fs-2x">
+								<i class="ki-duotone ki-note-2 fs-2x">
 									<span class="path1"></span>
 									<span class="path2"></span>
+									<span class="path3"></span>
+									<span class="path4"></span>
 								</i>
 							</div>
 							<!--end::Sidebar toggle-->
@@ -153,9 +155,11 @@
 									<!--begin:Menu link-->
 									<span class="menu-link">
 										<span class="menu-icon">
-											<i class="ki-duotone ki-star fs-1">
+											<i class="ki-duotone ki-note-2 fs-1">
 												<span class="path1"></span>
 												<span class="path2"></span>
+												<span class="path3"></span>
+												<span class="path4"></span>
 											</i>
 										</span>
 										<span class="menu-title">Galaxy</span>
@@ -395,7 +399,7 @@
 							<!--begin::Footer-->
 							<div class="app-sidebar-project-default app-sidebar-project-minimize text-center min-h-lg-400px flex-column-auto d-flex flex-column justify-content-end" id="kt_app_sidebar_footer">
 								<!--begin::Illustration-->
-								<img class="mx-auto mb-10" src="https://masterly-apps.s3.ca-central-1.amazonaws.com/logos/forms-full.png" style="width:30%; padding-bottom:25px">
+								<img class="mx-auto mb-10" src="https://masterly-apps.s3.ca-central-1.amazonaws.com/logos/masterly-logo-fav.png" style="padding:30px; width:50%">
 								<!--end::Illustration-->
 							</div>
 							<!--end::Footer-->
@@ -430,7 +434,7 @@
 												</li>
 												<!--end::Item-->
 												<!--begin::Item-->
-												<li class="breadcrumb-item text-gray-700 fw-bold lh-1">Dashboards</li>
+												<li class="breadcrumb-item text-gray-700 fw-bold lh-1">Galaxy</li>
 												<!--end::Item-->
 												<!--begin::Item-->
 												<li class="breadcrumb-item">
@@ -438,7 +442,7 @@
 												</li>
 												<!--end::Item-->
 												<!--begin::Item-->
-												<li class="breadcrumb-item text-gray-700">Default</li>
+												<li class="breadcrumb-item text-gray-700">Profile</li>
 												<!--end::Item-->
 											</ul>
 											<!--end::Breadcrumb-->
@@ -449,7 +453,7 @@
 										<!--end::Page title-->
 										<!--begin::Actions-->
 										<button id="editToggle" class="btn btn-sm btn-success ms-3 px-4 py-3">Edit</button>
-										<button id="uploadBtn" class="btn btn-sm btn-light ms-2 px-4 py-3 d-none">Upload CV/Socials</button>
+										<button id="importCvBtn" class="btn btn-primary btn-sm d-none">Import CV/Socials</button>
 										<!--end::Actions-->
 									</div>
 									<!--end::Toolbar wrapper-->
@@ -780,12 +784,12 @@
 		</div>
 		<!--end::Scrolltop-->
 		<!--begin::Modals-->
-		<!--begin::Modal - Upload CV / Socials-->
-		<div class="modal fade" id="galaxy_upload_modal" tabindex="-1" aria-hidden="true">
+		<!--begin::Modal - Import CV / Socials-->
+		<div class="modal fade" id="importCvModal" tabindex="-1" aria-hidden="true">
 		<div class="modal-dialog modal-dialog-centered">
-			<div class="modal-content">
+			<form class="modal-content" id="importCvForm">
 			<div class="modal-header">
-				<h3 class="modal-title">Upload CV / Social Links</h3>
+				<h3 class="modal-title">Import CV / Socials</h3>
 				<button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal" aria-label="Close">
 				<i class="ki-duotone ki-cross fs-2"></i>
 				</button>
@@ -793,27 +797,27 @@
 			<div class="modal-body">
 				<div class="mb-3">
 				<label class="form-label">LinkedIn</label>
-				<input id="inp_linkedin" class="form-control" placeholder="https://www.linkedin.com/in/..." />
-				</div>
-				<div class="mb-3">
-				<label class="form-label">X (Twitter)</label>
-				<input id="inp_x" class="form-control" placeholder="https://x.com/username" />
+				<input name="linkedin_url" class="form-control" placeholder="https://www.linkedin.com/in/...">
 				</div>
 				<div class="mb-3">
 				<label class="form-label">Google Scholar</label>
-				<input id="inp_scholar" class="form-control" placeholder="https://scholar.google.com/citations?user=..." />
+				<input name="scholar_url" class="form-control" placeholder="https://scholar.google.com/citations?user=...">
+				</div>
+				<div class="mb-3">
+				<label class="form-label">X (Twitter)</label>
+				<input name="x_url" class="form-control" placeholder="https://x.com/...">
 				</div>
 				<div class="mb-3">
 				<label class="form-label">CV (PDF)</label>
-				<input id="inp_cv" type="file" accept="application/pdf" class="form-control" />
+				<input id="cvFile" type="file" accept="application/pdf" class="form-control">
 				</div>
-				<div id="upload_status" class="text-gray-500 fs-8 mt-2">—</div>
+				<div id="cv_err" class="text-danger small d-none"></div>
 			</div>
 			<div class="modal-footer">
-				<button id="btn_save_upload" class="btn btn-primary">Save</button>
-				<button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+				<button class="btn btn-primary" type="submit">Import</button>
+				<button class="btn btn-light" data-bs-dismiss="modal" type="button">Cancel</button>
 			</div>
-			</div>
+			</form>
 		</div>
 		</div>
 		<!--end::Modal-->
@@ -849,10 +853,9 @@
 		<script src="assets/js/custom/utilities/modals/users-search.js"></script>
 		<!--end::Custom Javascript-->
 		<!--end::Javascript-->
-	</body>
-	<!--begin::Page-specific Javascript-->
-	<script src="../assets/js/custom/galaxy/profile.js" type="module"></script>
-	<!--end::Page-specific Javascript-->
+		<!--begin::Page-specific Javascript-->
+		<script src="assets/js/custom/galaxy/profile.js" type="module"></script>
+		<!--end::Page-specific Javascript-->
 	</body>
 	<!--end::Body-->
 </html>

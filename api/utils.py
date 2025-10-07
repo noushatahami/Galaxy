@@ -1,117 +1,463 @@
-import os
-import base64
-from openai import OpenAI
+from __future__ import annotations
+from typing import List, Dict, Optional, Tuple
+from pypdf import PdfReader
+from rapidfuzz import fuzz
+import io, re, requests, os, json
 from dotenv import load_dotenv
+from openai import OpenAI
 
-def get_base64_image(image_path):
-    with open(image_path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+load_dotenv()
 
-# Define paths
-image_dir = "assets/images"
+# --- Initialize OpenAI client safely ---
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+GPT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 
-image_files = {
-    "logo": "logo.png",
-    "search": "search.png",
-    "dashboard": "dashboard.png",
-    "insights": "insights.png",
-    "reports": "reports.png",
-    "settings": "settings.png",
-    "more": "more.png",
-    "help": "help.png",
-    "messages": "messages.png",
-    "notifications": "notifications.png",
-    "social_media": "social_media.png",
-    "media_mentions": "media_mentions.png",
-    "partners": "partners.png",
-    "profile": "profile.png",
-    "money": "money.png",
-    "impact_points": "impact_points.png",
-    "donut_chart": "donut_chart.png",
-    "xls": "xls.png",
-    "pdf": "pdf.png",
-    "doc": "doc.png",
-    "duration": "duration.png",
-    "amount": "amount.png",
-    "people": "people.png",
-    "deadline": "deadline.png",
-    "globe": "globe.png",
-    "citation": "citation.png",
-    "jira": "jira.png",
-    "gitHub": "gitHub.png",
-    "slack": "slack.png",
-    "zoom": "zoom.png"
-}
+def extract_cv_data(cv_text: str) -> dict:
+    """Use OpenAI to extract structured info from CV text in a strict schema."""
+    # NOTE: schema expanded so Grants / Projects / Compliance always have the
+    # fields your pages bind to.
+    schema_hint = {
+        "profile": {
+            "name": "",
+            "socials": {"LinkedIn": "", "Google Scholar": "", "X": ""},
+            "research_areas": [],
+            "positions": [],
+            "education": [],
+            "memberships": []
+        },
+        "publications": {
+            "publications": [
+                {"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}
+            ]
+        },
 
-# Load all images as base64 in a dictionary
-base64_images = {name: get_base64_image(os.path.join(image_dir, file)) for name, file in image_files.items()}
+        # Projects is an OBJECT (not a list) with all tiles your UI renders
+        "projects": {
+            "project_snapshot": {
+                "status": "",
+                "days_remaining": 0,
+                "title": "",
+                "description": "",
+                "donut_percentage": 0,
+                "tags": [{"label": ""}]
+            },
+            "project_status": {
+                "counts": {"active": 0, "on_hold": 0, "stopped": 0},
+                "projects": [{"label": "", "status": "", "selected": False}]
+            },
+            "impact_points": {"total": "", "change": "", "note": ""},
+            "total_budget": {"amount": "", "change": "", "note": ""},
+            "next_deadline": {"label": "", "date": ""},
+            "messages": [{"name": "", "time_ago": "", "subject": ""}],
+            "latest_activity": [{"name": "", "action": "", "time_ago": "", "avatar": "", "approved": False}]
+        },
 
-import pdfplumber
-import re
+        # Grants is an OBJECT with subkeys the Grants page needs
+        "grants": {
+            "grants": [
+                {
+                    "id": "",
+                    "title": "",
+                    "agency": "",
+                    "type": "",
+                    "duration": "",
+                    "amountAwarded": 0,
+                    "amountReceived": 0,
+                    "amountSpent": 0,
+                    "awardedAt": "",
+                    "tags": []
+                }
+            ],
+            "reports": { "grantId": "", "nextDue": "", "lastSubmitted": "" },
+            "breakdown": { "categories": [ {"label":"", "value":0} ], "total": 0 },
+            "keywords": []
+        },
 
-def extract_cv_data(cv_path):
-    # Load OpenAI API key from .env
-    load_dotenv()
-    client = OpenAI(api_key=os.getenv("OPENAI_KEY"))
-    model = os.getenv("OPENAI_MODEL")
+        # Compliance is an OBJECT with the cards your page renders
+        "compliance": {
+            "summary": {"compliant": 0, "pending": 0, "non_compliant": 0},
+            "quick_actions": [],
+            "key_contacts": [{"name": "", "role": "", "image": ""}],
+            "checkpoints": [{"title": "", "status": "", "last_reviewed": ""}],
+            "audits": [{"name": "", "date": "", "score": "", "tags": [""]}],
+            "notes": []
+        }
+    }
 
-    if not client.api_key or not model:
-        raise ValueError("Missing OpenAI API key or model in .env")
-    
-    # Extract plain text from PDF
-    with pdfplumber.open(cv_path) as pdf:
-        text = "\n".join(page.extract_text() or "" for page in pdf.pages)
-
-    # Load the schema from file
-    with open("schema.txt", "r") as f:
-        schema = f.read()
-
-    # Construct GPT prompt
     prompt = f"""
-You are a CV parser.
+You are a strict JSON generator for CV parsing.
+Return ONLY valid JSON. No commentary.
 
-Return your result as a JSON object with the following top-level keys:
-"compliance", "grants", "profile", "projects", "publications"
+Schema (use these exact keys; for missing values use empty strings/arrays/objects):
+{json.dumps(schema_hint)}
 
-Each section must match the structure shown below. If String data is missing, instead of leaving the values empty, write "Pending Input". If Int data is missing leave as 0. but preserve the structure.
+Rules:
+- profile.name must be a single string (author's full name).
+- profile.research_areas must be an array of short topic strings.
+- publications.publications is an array of items:
+  {{"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}}
+- Projects MUST be an object with keys shown above (not an array).
+- Grants MUST include 'grants' array and the sub-objects ('reports','breakdown','keywords').
+  * Normalize amounts to digits-only numbers when possible.
+  * awardedAt should be YYYY-MM-DD if present, else "".
+- Compliance MUST include summary/quick_actions/key_contacts/checkpoints/audits/notes.
+- Do not invent items; if not in CV, leave empty arrays/zeros/empty strings.
+- Titles and names should be as they appear in the CV.
 
-{schema}
-
-Now parse the following CV and return ONLY valid raw JSON (no markdown, no backticks):
-
-{text}
+CV TEXT (truncate to 15k chars):
+{cv_text[:15000]}
 """
-
     try:
-        # Call OpenAI model (gpt-4.1-nano)
-        response = client.chat.completions.create(
-            model=model,
+        completion = client.chat.completions.create(
+            model=GPT_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
+            temperature=0,
+            response_format={"type": "json_object"}
         )
-        content = response.choices[0].message.content
-        return json.loads(content)
+        data = completion.choices[0].message.content
+        parsed = json.loads(data)
+
+        # -------- Normalize: ensure all keys exist so the UI never sees undefined --------
+        def ensure(k, default):
+            if k not in parsed or parsed[k] is None:
+                parsed[k] = default
+
+        ensure("profile", schema_hint["profile"])
+        ensure("publications", {"publications": []})
+        ensure("projects", {})
+        ensure("grants", {})
+        ensure("compliance", {})
+
+        # Profile defaults
+        prof = parsed.get("profile") or {}
+        prof.setdefault("socials", {"LinkedIn": "", "Google Scholar": "", "X": ""})
+        prof.setdefault("research_areas", [])
+        prof.setdefault("positions", [])
+        prof.setdefault("education", [])
+        prof.setdefault("memberships", [])
+        parsed["profile"] = prof
+
+        # Publications defaults
+        pubs = parsed.get("publications") or {}
+        pubs.setdefault("publications", [])
+        parsed["publications"] = pubs
+
+        # Projects defaults (object shape your UI expects)
+        proj = parsed.get("projects") or {}
+        proj.setdefault("project_snapshot", {
+            "status":"", "days_remaining":0, "title":"", "description":"",
+            "donut_percentage":0, "tags":[]
+        })
+        proj.setdefault("project_status", {
+            "counts":{"active":0,"on_hold":0,"stopped":0},
+            "projects":[]
+        })
+        proj.setdefault("impact_points", {"total":"", "change":"", "note":""})
+        proj.setdefault("total_budget", {"amount":"", "change":"", "note":""})
+        proj.setdefault("next_deadline", {"label":"", "date":""})
+        proj.setdefault("messages", [])
+        proj.setdefault("latest_activity", [])
+        parsed["projects"] = proj
+
+        # Grants defaults (object shape your UI expects)
+        gr = parsed.get("grants") or {}
+        gr.setdefault("grants", [])
+        gr.setdefault("reports", {"grantId": "", "nextDue": "", "lastSubmitted": ""})
+        gr.setdefault("breakdown", {"categories": [], "total": 0})
+        gr.setdefault("keywords", [])
+        # Best-effort numeric coercion for amounts inside grants.grants
+        for g in gr["grants"]:
+            for k in ("amountAwarded","amountReceived","amountSpent"):
+                v = g.get(k)
+                if isinstance(v, str):
+                    # strip currency symbols and commas
+                    num = re.sub(r"[^\d.-]", "", v)
+                    try:
+                        g[k] = int(float(num)) if num else 0
+                    except Exception:
+                        g[k] = 0
+                elif v is None:
+                    g[k] = 0
+        parsed["grants"] = gr
+
+        # Compliance defaults (object shape your UI expects)
+        comp = parsed.get("compliance") or {}
+        comp.setdefault("summary", {"compliant":0, "pending":0, "non_compliant":0})
+        comp.setdefault("quick_actions", [])
+        comp.setdefault("key_contacts", [])
+        comp.setdefault("checkpoints", [])
+        comp.setdefault("audits", [])
+        comp.setdefault("notes", [])
+        parsed["compliance"] = comp
+
+        return parsed
 
     except Exception as e:
-        print("❌ Error parsing CV with OpenAI:", e)
-        return {}
-
-import copy
-import json
-
-def fill_template(template_path, data):
-    with open(template_path, "r") as f:
-        template = json.load(f)
-
-    def recursive_fill(template_node, data_node):
-        if isinstance(template_node, dict):
-            return {
-                key: recursive_fill(template_node[key], data_node.get(key, template_node[key]))
-                for key in template_node
+        print("OpenAI extraction error:", e)
+        # Return full default shape so pages still render empty but valid
+        return {
+            "profile": schema_hint["profile"],
+            "publications": {"publications": []},
+            "projects": {
+                "project_snapshot": {"status":"", "days_remaining":0, "title":"", "description":"", "donut_percentage":0, "tags":[]},
+                "project_status": {"counts":{"active":0,"on_hold":0,"stopped":0}, "projects":[]},
+                "impact_points": {"total":"", "change":"", "note":""},
+                "total_budget": {"amount":"", "change":"", "note":""},
+                "next_deadline": {"label":"", "date":""},
+                "messages": [],
+                "latest_activity": []
+            },
+            "grants": {
+                "grants": [],
+                "reports": {"grantId": "", "nextDue": "", "lastSubmitted": ""},
+                "breakdown": {"categories": [], "total": 0},
+                "keywords": []
+            },
+            "compliance": {
+                "summary": {"compliant":0, "pending":0, "non_compliant":0},
+                "quick_actions": [],
+                "key_contacts": [],
+                "checkpoints": [],
+                "audits": [],
+                "notes": []
             }
-        elif isinstance(template_node, list):
-            return data_node if isinstance(data_node, list) else template_node
-        else:
-            return data_node if data_node is not None else template_node
+        }
 
-    return recursive_fill(template, data)
+# ------------- PDF helpers -------------
+
+def read_pdf_text(file_bytes: bytes) -> str:
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+        out = []
+        for p in reader.pages:
+            out.append(p.extract_text() or "")
+        return "\n".join(out)
+    except Exception:
+        return ""
+
+def first_reasonable_name(txt: str) -> Optional[str]:
+    for line in (txt or "").splitlines():
+        L = line.strip()
+        if not L:
+            continue
+        # short line with letters/spaces, not a section header
+        if 3 < len(L) <= 60 and re.search(r"[A-Za-z]", L) and not L.endswith(":"):
+            if not (L.isupper() and " " not in L.strip()):
+                return L
+    return None
+
+def grep_lines(txt: str, needles: List[str], max_items: int = 12) -> List[str]:
+    hits = []
+    for line in (txt or "").splitlines():
+        L = " ".join(line.split())
+        if not L:
+            continue
+        for n in needles:
+            if n.lower() in L.lower():
+                hits.append(L)
+                break
+    # dedupe keep order
+    seen, out = set(), []
+    for h in hits:
+        if h not in seen:
+            out.append(h)
+            seen.add(h)
+    return out[:max_items]
+
+def guess_research_areas(txt: str) -> List[str]:
+    CAND = [
+        "AI","Artificial Intelligence","Machine Learning","Deep Learning","NLP",
+        "Computer Vision","Robotics","Biomedical","HCI","Reinforcement Learning",
+        "Data Mining","Security","Systems","Databases","Genomics","Wearables"
+    ]
+    found = []
+    for w in CAND:
+        if re.search(rf"\b{re.escape(w)}\b", txt, flags=re.I):
+            found.append(w)
+    norm = {"Artificial Intelligence":"AI"}
+    return [norm.get(x,x) for x in found]
+
+# ------------- Semantic Scholar helpers -------------
+
+SS_BASE = "https://api.semanticscholar.org/graph/v1"
+SS_KEY = os.getenv("SEMANTIC_SCHOLAR_API_KEY", "").strip()
+SS_HEADERS = {"x-api-key": SS_KEY} if SS_KEY else {}
+
+def ss_find_author_by_name(name: str) -> Optional[str]:
+    try:
+        r = requests.get(
+            f"{SS_BASE}/author/search",
+            params={"query": name, "limit": 1, "fields": "name"},
+            headers=SS_HEADERS or None,
+            timeout=20,
+        )
+        if r.ok:
+            data = r.json()
+            if data.get("total",0) > 0 and data.get("data"):
+                return str(data["data"][0]["authorId"])
+        else:
+            print("S2 search error:", r.status_code, r.text[:300])
+    except Exception as e:
+        print("S2 search exception:", e)
+    return None
+
+def ss_author_papers(author_id: str, limit: int = 100) -> List[Dict]:
+    try:
+        fields = "title,year,venue,citationCount,authors,url,externalIds"
+        r = requests.get(
+            f"{SS_BASE}/author/{author_id}/papers",
+            params={"limit": limit, "fields": fields},
+            headers=SS_HEADERS or None,
+            timeout=30,
+        )
+        if r.ok:
+            return r.json().get("data", [])
+        else:
+            print("S2 papers error:", r.status_code, r.text[:300])
+    except Exception as e:
+        print("S2 papers exception:", e)
+    return []
+
+# ------------- CV vs publications verification -------------
+
+def fuzzy_match(title: str, cv_text: str, threshold: int = 80) -> Tuple[bool,int]:
+    best = 0
+    for line in cv_text.splitlines():
+        L = " ".join(line.split())
+        if not L:
+            continue
+        score = fuzz.token_set_ratio(title, L)
+        if score > best:
+            best = score
+            if best >= threshold:
+                return True, best
+    return best >= threshold, best
+
+def verify_publications_against_cv(pubs: List[Dict], cv_text: str) -> Tuple[List[Dict], Dict]:
+    verified = []
+    for p in pubs:
+        title = p.get("title") or ""
+        ok, score = fuzzy_match(title, cv_text)
+        p2 = {
+            "title": title,
+            "year": p.get("year"),
+            "venue": p.get("venue"),
+            "citationCount": p.get("citationCount", 0),
+            "authors": [a.get("name") for a in (p.get("authors") or []) if a.get("name")],
+            "url": p.get("url"),
+            "verified": bool(ok),
+            "score": score,
+        }
+        verified.append(p2)
+
+    cites = [p.get("citationCount", 0) for p in verified]
+    total_cites = sum(cites)
+    sorted_c = sorted(cites, reverse=True)
+    h = 0
+    for i, c in enumerate(sorted_c, start=1):
+        if c >= i: h = i
+        else: break
+    i10 = sum(1 for c in cites if c >= 10)
+    metrics = {"totalCitations": total_cites, "hIndex": h, "i10": i10}
+    return verified, metrics
+
+# --- CV-aware + stable S2 author resolution ---
+
+AFFIL_HINT_WORDS = [
+    "university","institute","laboratory","lab","college","department",
+    "centre","center","school","faculty","hospital"
+]
+
+def _affil_candidates_from_cv(cv_text: str, max_len: int = 2000) -> list[str]:
+    if not cv_text:
+        return []
+    lines = [" ".join(l.split()) for l in cv_text[:max_len].splitlines() if l.strip()]
+    hits, seen = [], set()
+    for L in lines:
+        low = L.lower()
+        if any(w in low for w in AFFIL_HINT_WORDS):
+            if L not in seen:
+                hits.append(L); seen.add(L)
+    return hits[:20]
+
+def _fetch_author_affiliations(author_id: str) -> str:
+    try:
+        r = requests.get(
+            f"{SS_BASE}/author/{author_id}",
+            params={"fields": "name,affiliations"},
+            headers=SS_HEADERS or None,
+            timeout=20,
+        )
+        if r.ok:
+            j = r.json() or {}
+            return j.get("affiliations") or ""
+    except Exception:
+        pass
+    return ""
+
+def resolve_s2_author_id_stable(name: str, cv_text: str, max_candidates: int = 5) -> tuple[Optional[str], dict]:
+    """
+    Search by name; for each candidate:
+      - fetch papers and count how many titles verify against the CV text
+      - compare affiliations vs CV lines
+    Score = verified_count * 10 + affil_score; pick the best. Return (author_id, debug).
+    """
+    debug = {"candidates": []}
+    try:
+        # Step 1: candidate list by name
+        r = requests.get(
+            f"{SS_BASE}/author/search",
+            params={"query": name, "limit": max_candidates},
+            headers=SS_HEADERS or None,
+            timeout=20,
+        )
+        if not r.ok:
+            debug["error"] = f"S2 search {r.status_code}: {r.text[:200]}"
+            return None, debug
+
+        data = r.json() or {}
+        cands = data.get("data") or []
+        if not cands:
+            debug["note"] = "no candidates"
+            return None, debug
+
+        affil_lines = _affil_candidates_from_cv(cv_text)
+        best_id, best_score = None, -1
+
+        for c in cands:
+            aid = str(c.get("authorId"))
+            if not aid:
+                continue
+
+            papers = ss_author_papers(aid, limit=80) or []
+            verified, _m = verify_publications_against_cv(papers, cv_text or "")
+            verified_count = sum(1 for p in verified if p.get("verified"))
+
+            affs = _fetch_author_affiliations(aid)
+            affil_score = 0
+            for L in affil_lines:
+                affil_score = max(affil_score, fuzz.partial_ratio(L, affs))
+
+            score = verified_count * 10 + affil_score
+            debug["candidates"].append({
+                "author_id": aid,
+                "verified_count": verified_count,
+                "affil_score": affil_score,
+                "score": score,
+            })
+            if score > best_score:
+                best_score, best_id = score, aid
+
+        # Soft guard: if literally no signal, return None so caller can fall back to CV pubs
+        if best_id is None:
+            return None, debug
+        best = next((x for x in debug["candidates"] if x["author_id"] == best_id), None)
+        if best and best["verified_count"] == 0 and best["affil_score"] < 30:
+            debug["note"] = "low-confidence candidate"
+            return None, debug
+
+        debug["chosen"] = best_id
+        return best_id, debug
+    except Exception as e:
+        debug["exception"] = str(e)
+        return None, debug

@@ -34,6 +34,28 @@
     return uniq(all).slice(0, 12);
   }
 
+  async function persistPage(page, data){
+    try{
+      const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+      const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+      await fetch(`${API}/page`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ page, data })
+      });
+    }catch(e){ console.error('persistPage error:', e); }
+  }
+
+  function toPublicationsPayload(){
+    return {
+      publications: state.publications || [],
+      metrics: state.metrics || null,
+      topics: state.topics || [],
+      topCited: state.topCited || [],
+      overrides: state.overrides || {}
+    };
+  }
+
   /* ---------------- state & persistence ---------------- */
   let editMode = false;
 
@@ -181,6 +203,23 @@
     });
   }
 
+  /* ---------------- fetch verified pubs form backend ---------------- */
+  async function fetchPublicationsAggregate() {
+    const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+    const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+
+    const fd = new FormData();
+    const cvId = localStorage.getItem('galaxy_cv_id') || '';
+    if (cvId) fd.set('cv_id', cvId);
+
+    const res = await fetch(`${API}/publications/aggregate`, { method: 'POST', body: fd });
+    if (!res.ok) {
+      console.warn('aggregate failed:', res.status);
+      return null;
+    }
+    return await res.json(); // { publications: [...] }
+  }
+
   /* ---------------- shared modal ---------------- */
   let bsModal;
   function ensureModal() {
@@ -215,8 +254,9 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async () => {
-      await onSave();
-      save();
+      await onSave();                            // inputs → state
+      save();                                    // localStorage
+      await persistPage('publications', toPublicationsPayload()); // <-- NEW
       renderAll();
       bsModal.hide();
     });
@@ -411,9 +451,26 @@
 
   /* ---------------- boot ---------------- */
   document.addEventListener('DOMContentLoaded', async () => {
-    await load();
-    ensureTinyButtons();
-    wireEditToggle();
+    await load(); // show cache instantly if any
+
+    try{
+      const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+      const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+      const r = await fetch(`${API}/publications`, { cache:'no-store' });
+      if (r.ok){
+        const saved = await r.json();
+        // If you want saved manual set to override immediately:
+        if (saved?.publications?.length){
+          state.publications = saved.publications;
+          state.metrics  = saved.metrics  || state.metrics;
+          state.topics   = saved.topics   || state.topics;
+          state.topCited = saved.topCited || state.topCited;
+        }
+      }
+    }catch(e){}
+
+    ensureTinyButtons?.();
+    wireEditToggle?.();
     renderAll();
   });
 })();
