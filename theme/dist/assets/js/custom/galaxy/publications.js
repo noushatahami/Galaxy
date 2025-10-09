@@ -453,13 +453,14 @@
   document.addEventListener('DOMContentLoaded', async () => {
     await load(); // show cache instantly if any
 
-    try{
+    try {
       const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
       const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+
+      // 1) Try server snapshot
       const r = await fetch(`${API}/publications`, { cache:'no-store' });
       if (r.ok){
         const saved = await r.json();
-        // If you want saved manual set to override immediately:
         if (saved?.publications?.length){
           state.publications = saved.publications;
           state.metrics  = saved.metrics  || state.metrics;
@@ -467,7 +468,24 @@
           state.topCited = saved.topCited || state.topCited;
         }
       }
-    }catch(e){}
+
+      // 2) If still empty, trigger aggregation now (uses cv_id from localStorage)
+      if (!state.publications?.length) {
+        const agg = await fetchPublicationsAggregate(); // <-- you already defined this
+        if (agg?.publications?.length) {
+          state.publications = agg.publications;
+          state.metrics  = agg.metrics  || state.metrics;
+          save();
+          // (optional) also persist page snapshot back to server so a refresh keeps it
+          await persistPage('publications', {
+            publications: state.publications,
+            metrics: state.metrics
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('publications init failed', e);
+    }
 
     ensureTinyButtons?.();
     wireEditToggle?.();

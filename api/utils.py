@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import List, Dict, Optional, Tuple
 from pypdf import PdfReader
-from rapidfuzz import fuzz
+from rapidfuzz import fuzz, process
 import io, re, requests, os, json
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -333,28 +333,47 @@ def fuzzy_match(title: str, cv_text: str, threshold: int = 80) -> Tuple[bool,int
                 return True, best
     return best >= threshold, best
 
-def verify_publications_against_cv(pubs: List[Dict], cv_text: str) -> Tuple[List[Dict], Dict]:
+def verify_publications_against_cv(pubs: list[dict], cv_text: str) -> tuple[list[dict], dict]:
     verified = []
     for p in pubs:
         title = p.get("title") or ""
         ok, score = fuzzy_match(title, cv_text)
+
+        # --- normalize authors: allow list[str] or list[dict] ---
+        raw_authors = p.get("authors") or []
+        authors: list[str] = []
+        if isinstance(raw_authors, list):
+            for a in raw_authors:
+                if isinstance(a, dict):
+                    if a.get("name"):
+                        authors.append(a["name"])
+                elif isinstance(a, str):
+                    if a.strip():
+                        authors.append(a.strip())
+
+        # --- normalize citations to what the UI expects ---
+        citations = p.get("citations")
+        if citations is None:
+            citations = p.get("citationCount", 0)
+
         p2 = {
             "title": title,
             "year": p.get("year"),
-            "venue": p.get("venue"),
-            "citationCount": p.get("citationCount", 0),
-            "authors": [a.get("name") for a in (p.get("authors") or []) if a.get("name")],
+            "venue": p.get("venue") or p.get("journal") or p.get("conference"),
+            "citations": citations,                    # <-- UI key
+            "authors": authors,
             "url": p.get("url"),
             "verified": bool(ok),
             "score": score,
         }
         verified.append(p2)
 
-    cites = [p.get("citationCount", 0) for p in verified]
+    # metrics (unchanged; now uses 'citations')
+    cites = [int(p.get("citations") or 0) for p in verified]
     total_cites = sum(cites)
-    sorted_c = sorted(cites, reverse=True)
+    s = sorted(cites, reverse=True)
     h = 0
-    for i, c in enumerate(sorted_c, start=1):
+    for i, c in enumerate(s, start=1):
         if c >= i: h = i
         else: break
     i10 = sum(1 for c in cites if c >= 10)
@@ -461,3 +480,99 @@ def resolve_s2_author_id_stable(name: str, cv_text: str, max_candidates: int = 5
     except Exception as e:
         debug["exception"] = str(e)
         return None, debug
+    
+# --- Author disambiguation using CV titles (drop-in) ---
+def _extract_cv_titles_from_text(cv_text: str) -> list[str]:
+    """
+    Very light heuristic: collect lines under a 'PUBLICATIONS' block and lines that look like papers.
+    Your CV example already has a PUBLICATIONS section; this is enough for matching.
+    """
+    titles = []
+    lines = [l.strip(" •\t\r") for l in cv_text.splitlines()]
+    in_pubs = False
+    for ln in lines:
+        up = ln.upper()
+        if "PUBLICATIONS" in up:
+            in_pubs = True
+            continue
+        if in_pubs:
+            # stop if we hit another big section
+            if up in {"CONFERENCES","AWARDS","HONOURS","TEACHING","EXPERIENCE","SKILLS","EXTRA CURRICULARS","EXTRACURRICULARS"}:
+                break
+            # very loose: collect lines with at least ~6 words and a period or quote
+            if len(ln.split()) >= 6:
+                titles.append(ln)
+    # clean obvious leading numbering like "1. " etc
+    titles = [t.split(")", 1)[-1].split(".", 1)[-1].strip() if t[:2].isdigit() else t for t in titles]
+    # de-duplicate
+    seen = set()
+    uniq = []
+    for t in titles:
+        tt = t.lower()
+        if tt not in seen:
+            uniq.append(t)
+            seen.add(tt)
+    return uniq[:20]  # keep it small
+
+def ss_pick_author_by_cv(person_name: str, cv_text: str, *, max_candidates: int = 5) -> Optional[str]:
+    """
+    Try several candidate authors for this name and keep the one that has
+    at least ONE fuzzy match with a CV title. Returns author_id or None.
+    """
+    if not person_name:
+        return None
+
+    cv_titles = _extract_cv_titles_from_text(cv_text or "")
+    # if CV has no clear titles, fall back to plain name search
+    if not cv_titles:
+        try:
+            return ss_find_author_by_name(person_name)
+        except Exception:
+            return None
+
+    # get a few candidate authors by name (your ss_find_author_by_name returns a single id).
+    # If you only have single-id search available, we can still verify it below and bail if no match.
+    first_author = None
+    try:
+        first_author = ss_find_author_by_name(person_name)
+    except Exception:
+        first_author = None
+
+    candidates = [a for a in [first_author] if a][:max_candidates]
+
+    best_author = None
+    best_score = -1
+
+    for author_id in candidates:
+        try:
+            papers = ss_author_papers(author_id, limit=100) or []
+        except Exception:
+            papers = []
+
+        # titles from S2
+        s2_titles = []
+        for p in papers:
+            t = p.get("title") or ""
+            if t:
+                s2_titles.append(t)
+
+        # fastest check: max fuzzy partial ratio against any S2 title
+        # If any CV title ≈ any S2 title at >= 85, call it a hit.
+        local_best = 0
+        for cvt in cv_titles:
+            match, score, _ = process.extractOne(
+                cvt,
+                s2_titles,
+                scorer=fuzz.token_set_ratio
+            ) if s2_titles else (None, 0, None)
+            if score > local_best:
+                local_best = score
+
+        if local_best >= 85:
+            # strong evidence this is the right author
+            if local_best > best_score:
+                best_score = local_best
+                best_author = author_id
+
+    # If nothing verified, return None (caller will fall back to CV-only pubs)
+    return best_author
