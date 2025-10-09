@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from utils import (
     read_pdf_text, first_reasonable_name, grep_lines, guess_research_areas,
-    ss_find_author_by_name, ss_author_papers, verify_publications_against_cv,
+    ss_find_author_by_name, ss_author_papers, ss_pick_author_by_cv, verify_publications_against_cv,
     extract_cv_data,
 )
 
@@ -77,7 +77,7 @@ ACTIVE = {
     "projects": {},
     "grants": {},
     "compliance": {},
-    "publications": {},
+    "publications": {},   # <- we will keep the *verified* publications here
 }
 
 def _latest_cv_id() -> Optional[str]:
@@ -89,6 +89,11 @@ def _get_from_parsed(cv_id: Optional[str], key: str, default):
     if not cv_id or cv_id not in STORE:
         return default
     return (STORE[cv_id].get("parsed") or {}).get(key) or default
+
+def _profile_scholar_url(profile: dict) -> Optional[str]:
+    sm = (profile or {}).get("social_media") or (profile or {}).get("socials") or {}
+    # Keys are normalized later but support both:
+    return sm.get("Google Scholar") or sm.get("Scholar") or sm.get("scholar")
 
 # ---------- normalizers for pages ----------
 def _norm_profile(p: dict | None, *, photo_url_default: str = "") -> dict:
@@ -151,8 +156,11 @@ def _norm_profile(p: dict | None, *, photo_url_default: str = "") -> dict:
     photo_url = (p.get("photo_url") or "").strip()
     if not photo_url: photo_url = photo_url_default
 
+    # ensure name fallback stays non-empty (important for S2 lookups)
+    name = (p.get("name") or "").strip()
+
     return {
-        "name": (p.get("name") or "").strip(),
+        "name": name,
         "photo_url": photo_url,
         "social_media": socials,
         "media_mentions": _arr("media_mentions"),
@@ -283,6 +291,7 @@ async def ingest_cv(
     }.items() if v}
 
     prof_in = dict(prof or {})
+    # some earlier extractions used "socials"
     prof_in["socials"] = {**(prof_in.get("socials") or {}), **typed_socials}
 
     # Build normalized profile to your schema
@@ -290,9 +299,14 @@ async def ingest_cv(
     if "X" in profile["social_media"]:  # remap to Twitter key for final shape
         profile["social_media"]["Twitter"] = profile["social_media"].pop("X")
 
+    # Ensure non-blank name fallback (important for S2 author search)
+    if not (profile.get("name") or "").strip():
+        fallback = first_reasonable_name(text) or (cv.filename.rsplit(".", 1)[0] if cv.filename else "")
+        profile["name"] = fallback.strip()
+
     # normalize the other sections for immediate serving
-    projects_norm = _norm_projects(parsed.get("projects"))
-    grants_norm   = _norm_grants(parsed.get("grants"))
+    projects_norm   = _norm_projects(parsed.get("projects"))
+    grants_norm     = _norm_grants(parsed.get("grants"))
     compliance_norm = _norm_compliance(parsed.get("compliance"))
 
     # totals for grants (used by UI)
@@ -340,6 +354,7 @@ async def ingest_cv(
         "last_awarded_grant": last_awarded,
     }
     ACTIVE["compliance"] = compliance_norm
+    ACTIVE["publications"] = {"publications": [], "authorId": None, "name": profile.get("name","")}
 
     # return normalized sections so the client can cache to localStorage right away
     return {
@@ -348,11 +363,82 @@ async def ingest_cv(
         "projects": ACTIVE["projects"],
         "grants": ACTIVE["grants"],
         "compliance": ACTIVE["compliance"],
+        "publications": ACTIVE["publications"],  # empty until aggregate runs
     }
 
 # ----------------------------
-# Publications (unchanged logic)
+# Publications — Semantic Scholar + CV verification
 # ----------------------------
+
+@app.post("/api/publications/aggregate")
+async def publications_aggregate(cv_id: Optional[str] = Form(None)):
+    """
+    1) Pick the correct S2 author by verifying against at least one CV title.
+    2) Fetch that author's papers.
+    3) Verify/confirm them against CV text; then store.
+    """
+    if not cv_id or cv_id not in STORE:
+        raise HTTPException(status_code=400, detail="Missing or unknown cv_id")
+
+    stored   = STORE[cv_id]
+    parsed   = stored.get("parsed") or {}
+    profile  = stored.get("profile") or {}
+    name     = (profile.get("name") or "").strip()
+    cv_text  = stored.get("text") or ""
+
+    # Try cached author first
+    author_id = stored.get("pub_author_id")
+    if not author_id:
+        # New: choose author only if at least one CV-title matches
+        try:
+            author_id = ss_pick_author_by_cv(name, cv_text)
+        except Exception:
+            author_id = None
+        stored["pub_author_id"] = author_id
+
+    pubs = []
+    if author_id:
+        try:
+            pubs = ss_author_papers(author_id, limit=100)
+        except Exception:
+            pubs = []
+
+    # Fallback to any pubs already parsed from the CV (if S2 fails)
+    if not pubs:
+        pubs = ((parsed.get("publications") or {}).get("publications")) or []
+
+    # Final verification step (reuses your function)
+    verified, metrics = verify_publications_against_cv(pubs, cv_text or "")
+
+    # Normalize for UI
+    out = []
+    for p in verified:
+        title     = p.get("title", "")
+        venue     = p.get("venue") or p.get("journal") or p.get("conference") or ""
+        year      = p.get("year") or p.get("date") or 0
+        citations = p.get("citationCount") or p.get("citations") or 0
+        url       = p.get("url") or p.get("pdf_link") or ""
+        authors   = p.get("authors") or []
+        if authors and isinstance(authors[0], dict):
+            authors = [a.get("name") for a in authors if a.get("name")]
+
+        out.append({
+            "title": title,
+            "venue": venue,
+            "year": int(year) if str(year).isdigit() else 0,
+            "citationCount": int(citations) if str(citations).isdigit() else 0,
+            "url": url,
+            "authors": authors
+        })
+
+    # Persist so refresh/GET serves the same thing
+    ACTIVE["publications"] = {"publications": out, "authorId": author_id, "name": name, "metrics": metrics}
+    parsed_pub = parsed.get("publications") or {}
+    parsed_pub["publications"] = out
+    parsed_pub["metrics"] = metrics
+    parsed["publications"] = parsed_pub
+
+    return {"publications": out, "authorId": author_id, "name": name, "metrics": metrics}
 
 @app.post("/api/publications/verify")
 async def publications_verify(
@@ -360,6 +446,7 @@ async def publications_verify(
     person_name: Optional[str] = Form(None),
     scholar_url: Optional[str] = Form(None),
 ):
+    """Direct verify call (optional) — mainly useful for debugging."""
     cv_text = ""
     if cv_id and cv_id in STORE:
         cv_text = STORE[cv_id].get("text", "")
@@ -376,49 +463,6 @@ async def publications_verify(
 
     verified, metrics = verify_publications_against_cv(pubs, cv_text or "")
     return {"authorId": author_id, "publications": verified, "metrics": metrics}
-
-
-@app.post("/api/publications/aggregate")
-async def publications_aggregate(cv_id: Optional[str] = Form(None)):
-    if not cv_id or cv_id not in STORE:
-        raise HTTPException(status_code=400, detail="Missing or unknown cv_id")
-
-    stored = STORE[cv_id]
-    parsed = stored.get("parsed") or {}
-    profile = stored.get("profile") or {}
-    name = profile.get("name") or ""
-
-    pubs = []
-    author_id = None
-    if name:
-        author_id = ss_find_author_by_name(name)
-        if author_id:
-            pubs = ss_author_papers(author_id, limit=100)
-
-    if not pubs:
-        pubs = ((parsed.get("publications") or {}).get("publications")) or []
-
-    out = []
-    for p in pubs:
-        title = p.get("title", "")
-        venue = p.get("venue") or p.get("journal") or p.get("conference") or ""
-        year = p.get("year") or p.get("date") or 0
-        citations = p.get("citationCount") or p.get("citations") or 0
-        url = p.get("url") or p.get("pdf_link") or ""
-        authors = p.get("authors") or []
-        if authors and isinstance(authors[0], dict):
-            authors = [a.get("name") for a in authors if a.get("name")]
-
-        out.append({
-            "title": title,
-            "venue": venue,
-            "year": int(year) if str(year).isdigit() else 0,
-            "citationCount": int(citations) if str(citations).isdigit() else 0,
-            "url": url,
-            "authors": authors
-        })
-
-    return {"publications": out, "authorId": author_id, "name": name}
 
 # ----------------------------
 # Grants — GET (reads ACTIVE)
@@ -544,14 +588,16 @@ def api_profile(cv_id: Optional[str] = None):
 
 @app.get("/api/publications")
 def api_publications(cv_id: Optional[str] = None):
+    # Serve the verified publications we last computed (ACTIVE)
     if cv_id and cv_id in STORE:
         parsed = (STORE[cv_id].get("parsed") or {}).get("publications") or {}
-        return parsed
+        # If we already verified, prefer ACTIVE["publications"]
+        return ACTIVE.get("publications") or parsed
     return ACTIVE.get("publications") or {}
 
-# page-save endpoint
-from fastapi import Body
-
+# ----------------------------
+# Page save (persist edits from UI)
+# ----------------------------
 @app.post("/api/page")
 def api_page_save(payload: dict = Body(...)):
     """
@@ -584,7 +630,7 @@ def api_page_save(payload: dict = Body(...)):
     else:
         parsed[page] = _deep_merge(parsed.get(page) or {}, data)
 
-    # 3) Page-specific derived fields (keep your grants totals logic)
+    # 3) Page-specific derived fields
     if page == "grants":
         def _to_int2(x):
             try: return int(str(x).replace(",", "").strip())
@@ -597,4 +643,3 @@ def api_page_save(payload: dict = Body(...)):
         ACTIVE["grants"]["available_budget"]     = {"amount": max(total_received - total_spent, 0)}
 
     return {"ok": True, "page": page, "data": ACTIVE[page]}
-
