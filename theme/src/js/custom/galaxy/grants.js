@@ -261,8 +261,8 @@
         <div class="modal-content">
           <div class="modal-header">
             <h3 class="modal-title">Edit</h3>
-            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal">
-              <i class="ki-duotone ki-cross fs-2"></i>
+            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal" aria-label="Close">
+              <span class="fs-2 fw-bold" style="line-height:1;color:#111827;">×</span>
             </button>
           </div>
           <div class="modal-body"><div id="grants_modal_body"></div></div>
@@ -296,6 +296,7 @@
       });
       save();
       renderAll();
+      window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
       bsModal.hide();
     });
     bsModal.show();
@@ -437,5 +438,6 @@
     ensureTinyButtons();     // one tiny Edit per card (like profile)
     wireEditToggle();        // toggles the tiny buttons
     renderAll();             // paint
+    window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
   });
 })();
