@@ -332,6 +332,16 @@
 								.pill{ display:inline-block; padding:.35rem .6rem; border-radius:999px; background:rgba(255,255,255,.08); }
 								</style>
 
+								<style>
+								/* Donut progress styles */
+								.snapshot-donut-svg { width:100%; height:100%; transform: rotate(-90deg); }
+								.snapshot-donut-track, .snapshot-donut-ring { fill:none; stroke-width:3.5; }
+								.snapshot-donut-track { stroke: rgba(255,255,255,0.12); }
+								.snapshot-donut-ring { stroke:#20E3B2; stroke-linecap:round; transition: stroke-dasharray .4s ease, stroke .2s ease; }
+								.snapshot-donut { min-width:60px; min-height:60px; }
+								</style>
+
+
 								<div class="row g-6">
 								<!-- ================= MAIN (xl:8) ================= -->
 								<div class="col-xl-8">
@@ -428,10 +438,15 @@
 											</div>
 										</div>
 
-										<!-- donut image w/ % overlay -->
-										<div class="position-relative" style="width:60px;height:60px">
-											<img src="assets/media/misc/donut.png" class="w-100 h-100" alt="">
-											<span class="position-absolute top-50 start-50 translate-middle fw-bold fs-8" id="snapshot_donut">—</span>
+										<!-- donut progress (SVG) -->
+										<div class="position-relative snapshot-donut" style="width:60px;height:60px">
+										<svg viewBox="0 0 36 36" class="snapshot-donut-svg">
+											<!-- background track -->
+											<circle class="snapshot-donut-track" cx="18" cy="18" r="15.9155"></circle>
+											<!-- progress ring -->
+											<circle class="snapshot-donut-ring" cx="18" cy="18" r="15.9155" stroke-dasharray="0 100"></circle>
+										</svg>
+										<span class="position-absolute top-50 start-50 translate-middle fw-bold fs-8" id="snapshot_donut_pct">0%</span>
 										</div>
 										</div>
 									</div>
@@ -627,6 +642,32 @@
 		<!-- Publications page logic -->
 		<script src="assets/js/custom/galaxy/projects.js" type="module"></script>
 		<!--end::Javascript-->
+
+		<script>
+		/**
+		 * Set the donut progress (0–100). Optionally pass a color to override.
+		 * Usage from anywhere (including your module): window.setSnapshotProgress(72, '#F59E0B')
+		 */
+		(function () {
+		function setSnapshotProgress(percent, color) {
+			var ring = document.querySelector('.snapshot-donut-ring');
+			var pctEl = document.getElementById('snapshot_donut_pct');
+			if (!ring || !pctEl) return;
+
+			var p = Math.max(0, Math.min(100, Number(percent) || 0));
+			ring.style.strokeDasharray = p + ' ' + (100 - p);
+			if (color) ring.style.stroke = color;
+			pctEl.textContent = p + '%';
+		}
+
+		// expose globally so your existing `assets/js/custom/galaxy/projects.js` can call it
+		window.setSnapshotProgress = setSnapshotProgress;
+
+		// OPTIONAL: If you want a default preview without touching other code, uncomment:
+		// document.addEventListener('DOMContentLoaded', function(){ setSnapshotProgress(72); });
+		})();
+		</script>
+
 		</body>
 		</html>
 	<!--end::Body-->

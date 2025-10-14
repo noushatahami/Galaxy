@@ -18,6 +18,26 @@
   const fmtPct = (n) => (n==null || n==='') ? '—' : `${Number(n)}%`;
   const safeText = (v, d='—') => (v==null || v==='') ? d : v;
 
+    // --- donut driver (works with or without the global window.setSnapshotProgress) ---
+  function driveDonut(percent, color){
+    const p = Math.max(0, Math.min(100, Number(percent ?? 0) || 0));
+    if (typeof window !== 'undefined' && typeof window.setSnapshotProgress === 'function') {
+      window.setSnapshotProgress(p, color);
+      return;
+    }
+    // Fallback: directly manipulate the inline SVG if global helper isn't present
+    const ring  = document.querySelector('.snapshot-donut-ring');
+    const label = document.getElementById('snapshot_donut_pct');
+    if (ring){
+      ring.style.strokeDasharray = `${p} ${100 - p}`;
+      if (color) ring.style.stroke = color;
+    }
+    if (label){
+      label.textContent = `${p}%`;
+    }
+  }
+
+
   /* ----------------------- state ----------------------- */
   let editMode = false;
   const state = {
@@ -231,15 +251,14 @@
     if (cS) cS.textContent = `(${stopped})`;
   }
 
-  function renderSnapshot() {
-    const s = state.snapshot || {};
+    function renderSnapshot() {
+    const s   = state.snapshot || {};
     const dot = $('#snapshot_status_dot');
     const st  = $('#snapshot_status');
     const sd  = $('#snapshot_days');
     const tt  = $('#snapshot_title');
     const ds  = $('#snapshot_desc');
     const tg  = $('#snapshot_tags');
-    const dn  = $('#snapshot_donut');
 
     if (dot) dot.style.color = s.statusColor || '#20E3B2';
     if (st)  st.textContent  = safeText(s.status);
@@ -253,8 +272,18 @@
       if (!arr.length) tg.appendChild(H('span','text-gray-400','—'));
       else arr.forEach(t => tg.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', t)));
     }
-    if (dn) dn.textContent = fmtPct(s.donut);
+
+    // 🔸 Drive the donut SVG (percent + ring color)
+    //    Expects the HTML to have: .snapshot-donut-ring + #snapshot_donut_pct
+    if (s.donut == null || s.donut === '') {
+      driveDonut(0, s.statusColor || '#20E3B2');        // show 0% if missing
+      const label = document.getElementById('snapshot_donut_pct');
+      if (label) label.textContent = '—';
+    } else {
+      driveDonut(Number(s.donut) || 0, s.statusColor || '#20E3B2');
+    }
   }
+
 
   function renderLatestActivity() {
     const list = $('#latest_activity_list'); if (!list) return;
