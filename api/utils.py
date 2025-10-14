@@ -94,6 +94,7 @@ Schema (use these exact keys; for missing values use empty strings/arrays/object
 Rules:
 - profile.name must be a single string (author's full name).
 - profile.research_areas must be an array of short topic strings.
+- profile.education must be an array of strings formatted as "Degree, Field, Institution, Year, GPA: X.X".
 - publications.publications is an array of items:
   {{"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}}
 - Projects MUST be an object with keys shown above (not an array).

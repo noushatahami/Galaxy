@@ -130,6 +130,42 @@ def _norm_profile(p: dict | None, *, photo_url_default: str = "") -> dict:
         if isinstance(v, list): return [str(x).strip() for x in v if str(x).strip()]
         return []
 
+    def _education():
+        """Format education data as comma-separated strings like positions."""
+        out = []
+        for edu in p.get("education") or []:
+            if isinstance(edu, dict):
+                # Convert dict to comma-separated string
+                parts = []
+                if edu.get("degree"): parts.append(edu["degree"])
+                if edu.get("field"): parts.append(edu["field"])
+                if edu.get("institution"): parts.append(edu["institution"])
+                if edu.get("year"): parts.append(str(edu["year"]))
+                if edu.get("GPA"): parts.append(f"GPA: {edu['GPA']}")
+                out.append(", ".join(parts))
+            elif isinstance(edu, str):
+                # Try to parse Python dict string representation and convert to comma-separated
+                try:
+                    edu_str = edu.strip()
+                    if edu_str.startswith("{") and edu_str.endswith("}"):
+                        # Replace single quotes with double quotes for JSON parsing
+                        json_str = edu_str.replace("'", '"')
+                        parsed = json.loads(json_str)
+                        parts = []
+                        if parsed.get("degree"): parts.append(parsed["degree"])
+                        if parsed.get("field"): parts.append(parsed["field"])
+                        if parsed.get("institution"): parts.append(parsed["institution"])
+                        if parsed.get("year"): parts.append(str(parsed["year"]))
+                        if parsed.get("GPA"): parts.append(f"GPA: {parsed['GPA']}")
+                        out.append(", ".join(parts))
+                    else:
+                        # Already a plain string
+                        out.append(edu_str)
+                except (json.JSONDecodeError, ValueError):
+                    # If parsing fails, use as-is
+                    out.append(edu.strip())
+        return out
+
     def _awards():
         out = []
         for a in p.get("awards") or []:
@@ -169,7 +205,7 @@ def _norm_profile(p: dict | None, *, photo_url_default: str = "") -> dict:
         "patents": _patents(),
         "positions": _arr("positions"),
         "affiliations": _arr("affiliations"),
-        "education": _arr("education"),
+        "education": _education(),
         "memberships": _arr("memberships"),
         "mentors": _arr("mentors"),
         "colleagues": _arr("colleagues"),
