@@ -392,9 +392,12 @@
         <div class="modal-content">
           <div class="modal-header">
             <h3 class="modal-title">Edit</h3>
-            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal">
-              <i class="ki-duotone ki-cross fs-2"></i>
+            <button type="button" class="btn btn-icon btn-sm btn-light" data-bs-dismiss="modal" aria-label="Close">
+              <span class="fs-2 fw-bold" style="line-height:1;color:#111827;">×</span>
             </button>
+             <style>
+              [data-bs-theme="dark"] #projects_modal .ki-cross { color: var(--bs-gray-200) !important; }
+            </style>
           </div>
           <div class="modal-body"><div id="projects_modal_body"></div></div>
           <div class="modal-footer">
@@ -560,7 +563,9 @@
         <div class="col-md-3"><input class="form-control" placeholder="Name" value="${name}"></div>
         <div class="col-md-6"><input class="form-control" placeholder="Action" value="${action}"></div>
         <div class="col-md-2"><input class="form-control" placeholder="When" value="${when}" ></div>
-        <div class="col-md-1 d-grid"><button class="btn btn-light-danger">X</button></div>`;
+        <div class="col-md-1 d-grid">
+          <button class="btn btn-light-danger"><span class="text-gray-900">X</span></button>
+        </div>`;
       on(r.querySelector('button'),'click',()=>r.remove());
       return r;
     };
@@ -591,7 +596,9 @@
       r.innerHTML = `
         <div class="col-md-3"><input class="form-control" placeholder="From" value="${from}"></div>
         <div class="col-md-8"><input class="form-control" placeholder="Preview" value="${preview}"></div>
-        <div class="col-md-1 d-grid"><button class="btn btn-light-danger">X</button></div>`;
+        <div class="col-md-1 d-grid">
+          <button class="btn btn-light-danger"><span class="text-gray-900">X</span></button>
+        </div>`;
       on(r.querySelector('button'),'click',()=>r.remove());
       return r;
     };
