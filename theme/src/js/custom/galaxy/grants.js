@@ -296,6 +296,7 @@
       });
       save();
       renderAll();
+      window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
       bsModal.hide();
     });
     bsModal.show();
@@ -437,5 +438,6 @@
     ensureTinyButtons();     // one tiny Edit per card (like profile)
     wireEditToggle();        // toggles the tiny buttons
     renderAll();             // paint
+    window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
   });
 })();

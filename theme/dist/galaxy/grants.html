@@ -329,7 +329,14 @@
 								.card-3d:hover { transform: translateY(-3px); box-shadow: 0 14px 26px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08); }
 								.card-3d .card-header { border-bottom: 1px solid rgba(255,255,255,.07); }
 								</style>
-
+								<style>
+								.legend-item{ display:flex; align-items:center; justify-content:space-between; padding:.35rem .5rem; border:1px dashed rgba(255,255,255,.08); border-radius:10px; }
+								.legend-item + .legend-item{ margin-top:.5rem; }
+								.legend-dot{ width:10px; height:10px; border-radius:50%; margin-right:.5rem; display:inline-block; }
+								.legend-left{ display:flex; align-items:center; gap:.5rem; }
+								.legend-right{ opacity:.75; font-size:.9em; }
+								#grants_donut svg text{ font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; }
+								</style>
 								<div class="row g-6">
 								<!-- LEFT/MIDDLE (xl:8 cols) -->
 								<div class="col-xl-8">
@@ -379,9 +386,11 @@
 									<!-- Breakdown -->
 									<div class="card card-3d mb-6">
 									<div class="card-header"><h3 class="card-title fw-bold m-0">Breakdown</h3></div>
-									<div class="card-body text-center">
-										<div id="breakdown">—</div>
-										<img src="assets/media/placeholder-chart.png" alt="Breakdown chart" class="img-fluid mt-3" />
+									<div class="card-body">
+										<div id="grants_donut_wrap" class="d-flex flex-column align-items-center">
+										<div id="grants_donut" class="w-100" style="max-width:360px; aspect-ratio:1 / 1;"></div>
+										<ul id="grants_donut_legend" class="list-unstyled mt-4 w-100" style="max-width:420px;"></ul>
+										</div>
 									</div>
 									</div>
 
@@ -529,6 +538,180 @@
 		<!-- Publications page logic -->
 		<script src="assets/js/custom/galaxy/grants.js" type="module"></script>
 		<!--end::Javascript-->
+		<script type="module">
+		/* ========= Grants Breakdown Donut =========
+		Sums (Awarded, Received, Spent) across all grants.
+		Remaining = max(Awarded - Spent, 0).
+		Data sources (in order): window.GALAXY.data.grants → localStorage('galaxy_grants') → /api/grants
+		*/
+		const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
+		const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
+		const $ = (id)=>document.getElementById(id);
+
+		function readCache(key){ try{ return JSON.parse(localStorage.getItem(key)||'null'); }catch{ return null; } }
+		async function getJSON(url){ try{ const r = await fetch(url, {cache:'no-store'}); return r.ok ? r.json() : null; }catch{ return null; } }
+		function nz(x){
+			if (typeof x === 'string') x = x.replace(/[$,]/g,'');
+				const n = Number(x);
+				return Number.isFinite(n) && n > 0 ? n : 0;
+		}
+
+		function amountAwarded(g){
+			return nz(
+				g.amountAwarded ?? g.amount_awarded ?? g.awarded ??
+				g.amount ?? g.total_amount ?? g.value ?? g.budget?.total
+			);
+		}
+		function amountReceived(g){
+			return nz(
+				g.amountReceived ?? g.amount_received ?? g.received ?? g.budget?.received
+			);
+		}
+		function amountSpent(g){
+			return nz(
+				g.amountSpent ?? g.amount_spent ?? g.spent ?? g.budget?.spent
+			);
+		}
+
+		function fmtMoneyShort(n){
+		n = Number(n)||0; const a = Math.abs(n);
+		if (a >= 1e9) return `$${(n/1e9).toFixed(1)}B`;
+		if (a >= 1e6) return `$${(n/1e6).toFixed(1)}M`;
+		if (a >= 1e3) return `$${(n/1e3).toFixed(1)}k`;
+		return `$${n.toFixed(0)}`;
+		}
+
+		async function loadGrants(){
+		const store = (window.GALAXY && window.GALAXY.data && window.GALAXY.data.grants) || null;
+		if (Array.isArray(store)) return store;
+		const cached = readCache('galaxy_grants');
+		if (cached && Array.isArray(cached.grants)) return cached.grants;
+		if (Array.isArray(cached)) return cached;
+		const api = await getJSON(`${API}/grants`);
+		if (api && Array.isArray(api.grants)) return api.grants;
+		return Array.isArray(api) ? api : [];
+		}
+
+		function computeTotals(grants){
+		const awarded  = grants.reduce((a,g)=>a + amountAwarded(g), 0);
+		const received = grants.reduce((a,g)=>a + amountReceived(g), 0);
+		const spent    = grants.reduce((a,g)=>a + amountSpent(g), 0);
+		const remaining= Math.max(0, awarded - spent);
+		return {awarded, received, spent, remaining};
+		}
+
+		/* ----- SVG donut renderer (pure SVG, DPR-aware) ----- */
+		function renderDonut(container, segments, options={}){
+		const wrap = container;
+		wrap.innerHTML = '';                      // clear
+		const size = Math.min(wrap.clientWidth || 320, wrap.clientHeight || wrap.clientWidth || 320);
+		const W = size, H = size, cx = W/2, cy = H/2;
+		const strokeW = options.strokeWidth ?? Math.round(W * 0.16);
+		const r = Math.round((Math.min(W,H) - strokeW) / 2);  // radius
+
+		const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+		svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+		svg.setAttribute('width', '100%');
+		svg.setAttribute('height','100%');
+
+		// Background ring
+		const bg = document.createElementNS(svg.namespaceURI,'circle');
+		bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r);
+		bg.setAttribute('fill','none'); bg.setAttribute('stroke','rgba(255,255,255,.08)'); bg.setAttribute('stroke-width', strokeW);
+		svg.appendChild(bg);
+
+		const total = segments.reduce((a,s)=>a + s.value, 0) || 1;
+		let startAngle = -90; // start at top
+
+		segments.forEach(seg=>{
+			const angle = (seg.value / total) * 360;
+			const endAngle = startAngle + angle;
+
+			const largeArc = angle > 180 ? 1 : 0;
+			const a0 = (Math.PI/180) * startAngle;
+			const a1 = (Math.PI/180) * endAngle;
+
+			const x0 = cx + r * Math.cos(a0);
+			const y0 = cy + r * Math.sin(a0);
+			const x1 = cx + r * Math.cos(a1);
+			const y1 = cy + r * Math.sin(a1);
+
+			// Path for arc, then stroke-fatten by using stroke-width
+			const path = document.createElementNS(svg.namespaceURI,'path');
+			path.setAttribute('d', `M ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1}`);
+			path.setAttribute('fill','none');
+			path.setAttribute('stroke', seg.color);
+			path.setAttribute('stroke-linecap','round');
+			path.setAttribute('stroke-width', strokeW);
+			path.setAttribute('opacity','0.95');
+			svg.appendChild(path);
+
+			startAngle = endAngle;
+		});
+
+		// Center labels
+		const main = document.createElementNS(svg.namespaceURI,'text');
+		main.setAttribute('x', cx); main.setAttribute('y', cy - 4);
+		main.setAttribute('text-anchor','middle'); main.setAttribute('dominant-baseline','middle');
+		main.setAttribute('font-size', Math.round(W*0.12)); main.setAttribute('font-weight','800');
+		main.textContent = segments.find(s=>s.key==='awarded') ? fmtMoneyShort(segments.find(s=>s.key==='awarded').value) : '';
+		svg.appendChild(main);
+
+		const sub = document.createElementNS(svg.namespaceURI,'text');
+		sub.setAttribute('x', cx); sub.setAttribute('y', cy + W*0.10);
+		sub.setAttribute('text-anchor','middle'); sub.setAttribute('font-size', Math.round(W*0.04));
+		sub.setAttribute('fill','rgba(255,255,255,.7)');
+		sub.textContent = 'Total Awarded';
+		svg.appendChild(sub);
+
+		wrap.appendChild(svg);
+		}
+
+		/* ----- Legend renderer ----- */
+		function renderLegend(container, segments){
+		container.innerHTML = segments.map(s=>{
+			return `<li class="legend-item">
+			<div class="legend-left"><span class="legend-dot" style="background:${s.color}"></span><span>${s.label}</span></div>
+			<div class="legend-right">${fmtMoneyShort(s.value)} · ${Math.round((s.value / (segments.reduce((a,x)=>a+x.value,0)||1))*100)}%</div>
+			</li>`;
+		}).join('');
+		}
+
+		/* ----- Init ----- */
+		async function initDonut(){
+		const donutBox = $('grants_donut');
+		const legend   = $('grants_donut_legend');
+		if(!donutBox || !legend) return;
+
+		const grants = await loadGrants();
+		const t = computeTotals(grants);
+
+		const segments = [
+			{ key:'spent',     label:'Spent',     value:t.spent,     color:'hsl(10 85% 60%)'  },
+			{ key:'received',  label:'Received',  value:t.received,  color:'hsl(210 85% 60%)' },
+			{ key:'remaining', label:'Remaining', value:t.remaining, color:'hsl(50 85% 60%)'  },
+			{ key:'awarded',   label:'Awarded',   value:t.awarded,   color:'hsl(140 70% 45%)' }
+		];
+
+		// order big → small for nicer arcs (optional)
+		segments.sort((a,b)=>b.value - a.value);
+
+		renderDonut(donutBox, segments);
+		renderLegend(legend, segments);
+
+		// Keep it responsive
+		const ro = new ResizeObserver(()=>renderDonut(donutBox, segments));
+		ro.observe(donutBox);
+		}
+
+		window.addEventListener('storage', (e)=>{
+		if (e.key === 'galaxy_grants') initDonut();
+		});
+
+		window.addEventListener('galaxy:grants:updated', initDonut);
+
+		initDonut();
+		</script>
 		</body>
 		</html>
 	<!--end::Body-->
