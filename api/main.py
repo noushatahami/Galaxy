@@ -682,23 +682,28 @@ def api_profile(cv_id: Optional[str] = None):
 
 @app.get("/api/publications")
 def api_publications(cv_id: Optional[str] = None):
-    # Serve the verified publications we last computed (ACTIVE)
+    """
+    Serve the last known publications bundle.
+    Prefer ACTIVE when it contains a publications array; otherwise fall back to parsed.
+    """
+    def _has_pubs(d):
+        return isinstance(d, dict) and isinstance(d.get("publications"), list)
+
+    active = ACTIVE.get("publications") or {}
+
     if cv_id and cv_id in STORE:
-        parsed = (STORE[cv_id].get("parsed") or {}).get("publications") or {}
-        # If we already verified, prefer ACTIVE["publications"]
-        return ACTIVE.get("publications") or parsed
-    return ACTIVE.get("publications") or {}
+        parsed_block = (STORE[cv_id].get("parsed") or {}).get("publications") or {}
+        # If ACTIVE doesn't have pubs (or is blank), serve parsed_block instead
+        return active if _has_pubs(active) else parsed_block
+
+    # No cv_id: serve ACTIVE if it has pubs; else {}
+    return active if _has_pubs(active) else {}
 
 # ----------------------------
 # Page save (persist edits from UI)
 # ----------------------------
 @app.post("/api/page")
 def api_page_save(payload: dict = Body(...)):
-    """
-    Accepts:
-      { "page": "projects"|"grants"|"compliance"|"profile"|"publications", "data": {...} }
-    Merges into ACTIVE and STORE[cv_id]['parsed' or 'profile'] so /api/<page> serves it.
-    """
     page = (payload or {}).get("page")
     data = (payload or {}).get("data") or {}
     if page not in {"projects", "grants", "compliance", "profile", "publications"}:
@@ -708,23 +713,25 @@ def api_page_save(payload: dict = Body(...)):
     if not cv_id or cv_id not in STORE:
         raise HTTPException(status_code=400, detail="No active CV")
 
-    # 1) Merge into ACTIVE snapshot
     cur_active = ACTIVE.get(page) or {}
-    ACTIVE[page] = _deep_merge(cur_active.copy(), data)
 
-    # 2) Mirror into parsed/profile block so subsequent GETs match
+    # ---- publications: preserve authorId/name; ensure shape stays a dict with .publications ----
+    if page == "publications":
+        keep = {k: v for k, v in cur_active.items() if k in ("authorId", "name")}
+        merged = _deep_merge(cur_active.copy(), data)
+        merged.update(keep)  # put authorId/name back if data didn't include them
+        ACTIVE[page] = merged
+    else:
+        ACTIVE[page] = _deep_merge(cur_active.copy(), data)
+
     parsed = STORE[cv_id].setdefault("parsed", {})
-
     if page == "profile":
-        # profile is stored at top-level too
         prof_now = STORE[cv_id].get("profile") or {}
         STORE[cv_id]["profile"] = _deep_merge(prof_now, data)
-        # also mirror under parsed["profile"] for symmetry
         parsed["profile"] = _deep_merge(parsed.get("profile") or {}, data)
     else:
         parsed[page] = _deep_merge(parsed.get(page) or {}, data)
 
-    # 3) Page-specific derived fields
     if page == "grants":
         def _to_int2(x):
             try: return int(str(x).replace(",", "").strip())
@@ -737,3 +744,4 @@ def api_page_save(payload: dict = Body(...)):
         ACTIVE["grants"]["available_budget"]     = {"amount": max(total_received - total_spent, 0)}
 
     return {"ok": True, "page": page, "data": ACTIVE[page]}
+
