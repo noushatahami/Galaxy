@@ -12,6 +12,112 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 GPT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
 
+# --- Title → AI keywords -----------------------------------------------------
+def ai_keywords_from_titles(titles: list[str], max_keywords: int = 7) -> dict[str, list[str]]:
+    """
+    Ask OpenAI to generate concise, meaningful keywords for each title.
+    Returns: {title: [kw1, kw2, ...]}
+    - Keywords are NOT just the title words; they should be domain terms / short phrases (1 word only).
+    - No stopwords; no duplicates; lowercase preferred.
+    - If the model fails, returns {} and the caller can fall back.
+    """
+    titles = [t for t in (titles or []) if isinstance(t, str) and t.strip()]
+    if not titles:
+        return {}
+
+    # Build a compact prompt; we want deterministic JSON back
+    system_msg = (
+        "You generate 1–7 compact keywords per paper title. "
+        "Use domain-relevant terms and short phrases (1 word). "
+        "Do NOT copy the title verbatim. Avoid generic words like 'study', 'analysis', 'paper'. "
+        "Prefer lowercase. Return strict JSON with shape: "
+        "{\"items\": [{\"title\": \"...\", \"keywords\": [\"...\"]}, ...]}"
+    )
+    user_payload = {"items": [{"title": t} for t in titles], "max_keywords": max_keywords}
+
+    try:
+        completion = client.chat.completions.create(
+            model=GPT_MODEL,
+            temperature=0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
+            ],
+        )
+        raw = completion.choices[0].message.content
+        data = json.loads(raw or "{}")
+        out: dict[str, list[str]] = {}
+        for item in (data.get("items") or []):
+            title = (item.get("title") or "").strip()
+            kws = item.get("keywords") or []
+            # normalize keywords: strings only, strip, lowercase, de-dupe, max N
+            clean: list[str] = []
+            seen = set()
+            for k in kws:
+                if not isinstance(k, str):
+                    continue
+                w = k.strip().lower()
+                if not w:
+                    continue
+                if w in seen:
+                    continue
+                seen.add(w)
+                clean.append(w)
+                if len(clean) >= max_keywords:
+                    break
+            if title and clean:
+                out[title] = clean
+        return out
+    except Exception as e:
+        # Keep server robust; caller will fall back to rule-based tags
+        print("ai_keywords_from_titles error:", repr(e))
+        return {}
+
+_STOPWORDS = {
+    "a","an","the","and","or","of","for","to","with","in","on","by","from",
+    "via","using","use","based","approach","method","study","analysis","paper",
+    "towards","toward","under","over","into","out","vs","versus","case","new"
+}
+
+def extract_title_tags(title: str, max_keywords: int = 7) -> list[str]:
+    """
+    Rule-based fallback: pull 1–3 word key phrases from a title.
+    - lowercase
+    - drop stopwords & very short tokens
+    - keep simple bigrams/trigrams that look meaningful
+    """
+    if not title:
+        return []
+
+    # normalize punctuation/spaces
+    t = re.sub(r"[:\-–|/]+", " ", title.lower())
+    t = re.sub(r"[^\w\s]", " ", t)
+    tokens = [w for w in t.split() if len(w) > 2 and w not in _STOPWORDS]
+
+    # build n-grams (2–3 words) + strong unigrams
+    grams = set()
+    # bigrams
+    for i in range(len(tokens)-1):
+        grams.add(f"{tokens[i]} {tokens[i+1]}")
+    # trigrams
+    for i in range(len(tokens)-2):
+        grams.add(f"{tokens[i]} {tokens[i+1]} {tokens[i+2]}")
+    # add a few salient unigrams (capitals often signal proper nouns pre-lowercasing, already lost; pick longest)
+    unigrams = sorted(tokens, key=len, reverse=True)[:3]
+
+    # simple scoring: prefer longer n-grams, then longest unigrams
+    scored = sorted(list(grams), key=lambda s: (-len(s.split()), -len(s)))
+    out = []
+    seen = set()
+    for k in scored + unigrams:
+        if k not in seen:
+            out.append(k)
+            seen.add(k)
+        if len(out) >= max_keywords:
+            break
+    return out
+
 def extract_cv_data(cv_text: str) -> dict:
     """Use OpenAI to extract structured info from CV text in a strict schema."""
     # NOTE: schema expanded so Grants / Projects / Compliance always have the

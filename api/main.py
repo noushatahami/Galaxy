@@ -11,55 +11,10 @@ from pydantic import BaseModel
 
 from utils import (
     oa_author_works_all, read_pdf_text, first_reasonable_name, grep_lines, guess_research_areas,
-    verify_publications_against_cv, extract_cv_data,
+    verify_publications_against_cv, extract_cv_data, extract_title_tags,
     # OpenAlex:
-    oa_pick_author_by_cv, oa_author_works,
+    oa_pick_author_by_cv, oa_author_works, ai_keywords_from_titles,
 )
-
-# --- Title → tags (single-word keywords) helper ------------------------------
-import re, unicodedata
-
-_TAG_STOP = {
-    "the","a","an","and","or","of","in","on","for","to","with","by","from","at","as","into","about","over","after","before","between",
-    "is","are","was","were","be","being","been","has","have","had","do","does","did","can","could","may","might","should","would","will",
-    "not","no","yes","via","using","use","based","approach","toward","towards","under","without","within","across","per","vs","versus",
-    "we","our","their","its","your","you","they","one","two","three",
-    "study","analysis","review","systematic","scoping","meta","meta-analysis","case","report","results","effect","effects","method","methods",
-    "model","models","modelling","modeling","dataset","data","evidence","trial","randomized","controlled","protocol","framework",
-    "outcome","outcomes","impact","impacts","evaluation","assessing","assessment","improving","improvement","exploring","exploration", "among", "all", "cause", "needs"
-}
-
-def _norm_words(title: str) -> list[str]:
-    if not title:
-        return []
-    # strip accents/punct, lower, collapse spaces
-    t = unicodedata.normalize("NFKD", title)
-    t = "".join(ch for ch in t if not unicodedata.combining(ch))
-    t = t.lower()
-    t = re.sub(r"[-–—/]", " ", t)      # dash-like → space
-    t = re.sub(r"[^a-z0-9\s]", " ", t) # drop punctuation
-    t = re.sub(r"\s+", " ", t).strip()
-    # return only informative single tokens (no stopwords, no numbers, length ≥3)
-    return [w for w in t.split(" ") if w and w not in _TAG_STOP and not w.isdigit() and len(w) > 2]
-
-def extract_title_tags(title: str, max_tags: int = 7) -> list[str]:
-    """
-    Single-word keywording from a title:
-      - normalize and de-stop, keep only unigrams
-      - unique, preserve original order, cap to max_tags
-    """
-    toks = _norm_words(title)
-    if not toks:
-        return []
-    out, seen = [], set()
-    for w in toks:
-        if w not in seen:
-            seen.add(w)
-            out.append(w)
-        if len(out) >= max_tags:
-            break
-    return out
-# -----------------------------------------------------------------------------
 
 # ----------------------------
 # Models / helpers
@@ -523,7 +478,6 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
                     "url": url,
                     "authors": authors,
                     "citations": int(w.get("cited_by_count") or 0),
-                    "tags": extract_title_tags(title),
                     "source": "openalex",
                 })
         except Exception:
@@ -534,16 +488,24 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
 
     verified, metrics = verify_publications_against_cv(pubs, cv_text or "")
 
+        # --- Ask OpenAI for meaningful keywords per title (with graceful fallback) ---
+    all_titles = [ (p.get("title") or "").strip() for p in verified if (p.get("title") or "").strip() ]
+    ai_kw_map = ai_keywords_from_titles(all_titles, max_keywords=7) if all_titles else {}
+
     out = []
     for p in verified:
-        title   = p.get("title", "")
+        title   = p.get("title", "") or ""
         venue   = p.get("venue") or p.get("journal") or p.get("conference") or ""
         year    = p.get("year") or p.get("date") or 0
         url     = p.get("url") or p.get("pdf_link") or ""
         authors = p.get("authors") or []
         if authors and isinstance(authors[0], dict):
             authors = [a.get("name") for a in authors if a.get("name")]
-        tags = p.get("tags") or extract_title_tags(title)
+
+        # Prefer AI-generated keywords; fall back to rule-based unigrams if needed
+        ai_tags = ai_kw_map.get(title) or []
+        tags = ai_tags if ai_tags else extract_title_tags(title)
+
         out.append({
             "title": title,
             "venue": venue,
@@ -553,6 +515,7 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
             "authors": authors,
             "tags": tags,
         })
+
 
     ACTIVE["publications"] = {"publications": out, "authorId": author_id, "name": name, "metrics": metrics}
     parsed_pub = parsed.get("publications") or {}
@@ -768,26 +731,6 @@ def api_page_save(payload: dict = Body(...)):
         keep = {k: v for k, v in cur_active.items() if k in ("authorId", "name")}
         merged = _deep_merge(cur_active.copy(), data)
         merged.update(keep)  # put authorId/name back if data didn't include them
-        # Enforce single-word tags for each publication:
-        pubs = merged.get("publications") or []
-        for item in pubs:
-            title = item.get("title") or ""
-            existing = item.get("tags") or []
-            singles = []
-            # flatten any user-entered tags to single tokens
-            for t in existing:
-                for tok in _norm_words(t):
-                    if tok not in singles:
-                        singles.append(tok)
-                    if len(singles) >= 7:
-                        break
-                if len(singles) >= 7:
-                    break
-            # if user didn't provide tags, or they collapsed to none, derive from title
-            if not singles:
-                singles = extract_title_tags(title)
-            item["tags"] = singles[:7]
-        merged["publications"] = pubs
         ACTIVE[page] = merged
     else:
         ACTIVE[page] = _deep_merge(cur_active.copy(), data)
