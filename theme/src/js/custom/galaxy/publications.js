@@ -491,4 +491,18 @@
     wireEditToggle?.();
     renderAll();
   });
+  // -- Only run after CV import --
+  window.addEventListener('galaxy:cv:imported', async (e) => {
+    const agg = await fetchPublicationsAggregate(); // posts cv_id from localStorage
+    if (agg?.publications?.length) {
+      state.publications = agg.publications;
+      state.metrics = agg.metrics || state.metrics;
+      save();
+      await persistPage('publications', {
+        publications: state.publications,
+        metrics: state.metrics
+      });
+      renderAll();
+    }
+  });
 })();
