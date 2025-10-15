@@ -566,7 +566,11 @@
         const data = await r.json();
 
         // Save cv_id for other pages (e.g., Publications verify)
-        if (data.cv_id) localStorage.setItem('galaxy_cv_id', data.cv_id);
+        if (data.cv_id) {
+          localStorage.setItem('galaxy_cv_id', data.cv_id);
+          // 🔔 trigger Publications aggregation (OpenAlex) ONLY after CV import
+          window.dispatchEvent(new CustomEvent('galaxy:cv:imported', { detail: { cv_id: data.cv_id } }));
+        }
 
         localStorage.removeItem('galaxy_grants');
         localStorage.removeItem('galaxy_projects');

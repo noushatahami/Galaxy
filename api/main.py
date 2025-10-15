@@ -10,9 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from utils import (
-    read_pdf_text, first_reasonable_name, grep_lines, guess_research_areas,
-    ss_find_author_by_name, ss_author_papers, ss_pick_author_by_cv, verify_publications_against_cv,
-    extract_cv_data,
+    oa_author_works_all, read_pdf_text, first_reasonable_name, grep_lines, guess_research_areas,
+    verify_publications_against_cv, extract_cv_data,
+    # OpenAlex:
+    oa_pick_author_by_cv, oa_author_works,
 )
 
 # ----------------------------
@@ -406,13 +407,11 @@ async def ingest_cv(
 # Publications — Semantic Scholar + CV verification
 # ----------------------------
 
+from typing import Optional
+from fastapi import Form, HTTPException
+
 @app.post("/api/publications/aggregate")
 async def publications_aggregate(cv_id: Optional[str] = Form(None)):
-    """
-    1) Pick the correct S2 author by verifying against at least one CV title.
-    2) Fetch that author's papers.
-    3) Verify/confirm them against CV text; then store.
-    """
     if not cv_id or cv_id not in STORE:
         raise HTTPException(status_code=400, detail="Missing or unknown cv_id")
 
@@ -422,12 +421,32 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
     name     = (profile.get("name") or "").strip()
     cv_text  = stored.get("text") or ""
 
+    # NEW: build a list of CV titles if we have structured pubs
+    cv_titles_struct = []
+    try:
+        cv_titles_struct = [
+            p.get("title") for p in ((parsed.get("publications") or {}).get("publications") or [])
+            if p.get("title")
+        ]
+    except Exception:
+        cv_titles_struct = []
+
+    # Optional affiliation string to help tie-break
+    cv_affiliation = (profile.get("affiliation") or profile.get("institution") or "").strip()
+
     # Try cached author first
     author_id = stored.get("pub_author_id")
     if not author_id:
-        # New: choose author only if at least one CV-title matches
         try:
-            author_id = ss_pick_author_by_cv(name, cv_text)
+            # Use structured titles if available; else fall back to raw CV text
+            titles_or_text = cv_titles_struct if cv_titles_struct else cv_text
+            author_id = oa_pick_author_by_cv(
+                name,
+                titles_or_text,
+                cv_affiliation=cv_affiliation or None,
+                high_thresh=88,
+                mid_thresh=75,
+            )
         except Exception:
             author_id = None
         stored["pub_author_id"] = author_id
@@ -435,39 +454,58 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
     pubs = []
     if author_id:
         try:
-            pubs = ss_author_papers(author_id, limit=100)
+            works = oa_author_works_all(author_id, max_pages=2) or []
+            pubs = []
+            for w in works:
+                title = w.get("display_name") or ""
+                year  = w.get("publication_year") or 0
+                venue = (w.get("host_venue") or {}).get("display_name") or ""
+                url   = (
+                    (w.get("primary_location") or {}).get("landing_page_url")
+                    or (w.get("primary_location") or {}).get("source", {}).get("url")
+                    or (w.get("ids") or {}).get("doi")
+                    or ""
+                )
+                authors = [
+                    (a.get("author") or {}).get("display_name")
+                    for a in (w.get("authorships") or [])
+                    if (a.get("author") or {}).get("display_name")
+                ]
+                pubs.append({
+                    "title": title,
+                    "venue": venue,
+                    "year": int(year) if str(year).isdigit() else 0,
+                    "url": url,
+                    "authors": authors,
+                    "citations": int(w.get("cited_by_count") or 0),
+                    "source": "openalex",
+                })
         except Exception:
             pubs = []
 
-    # Fallback to any pubs already parsed from the CV (if S2 fails)
     if not pubs:
         pubs = ((parsed.get("publications") or {}).get("publications")) or []
 
-    # Final verification step (reuses your function)
     verified, metrics = verify_publications_against_cv(pubs, cv_text or "")
 
-    # Normalize for UI
     out = []
     for p in verified:
-        title     = p.get("title", "")
-        venue     = p.get("venue") or p.get("journal") or p.get("conference") or ""
-        year      = p.get("year") or p.get("date") or 0
-        citations = p.get("citationCount") or p.get("citations") or 0
-        url       = p.get("url") or p.get("pdf_link") or ""
-        authors   = p.get("authors") or []
+        title   = p.get("title", "")
+        venue   = p.get("venue") or p.get("journal") or p.get("conference") or ""
+        year    = p.get("year") or p.get("date") or 0
+        url     = p.get("url") or p.get("pdf_link") or ""
+        authors = p.get("authors") or []
         if authors and isinstance(authors[0], dict):
             authors = [a.get("name") for a in authors if a.get("name")]
-
         out.append({
             "title": title,
             "venue": venue,
             "year": int(year) if str(year).isdigit() else 0,
-            "citationCount": int(citations) if str(citations).isdigit() else 0,
+            "citations": int(p.get("citations") or 0),
             "url": url,
-            "authors": authors
+            "authors": authors,
         })
 
-    # Persist so refresh/GET serves the same thing
     ACTIVE["publications"] = {"publications": out, "authorId": author_id, "name": name, "metrics": metrics}
     parsed_pub = parsed.get("publications") or {}
     parsed_pub["publications"] = out
@@ -480,22 +518,42 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
 async def publications_verify(
     cv_id: Optional[str] = Form(None),
     person_name: Optional[str] = Form(None),
-    scholar_url: Optional[str] = Form(None),
 ):
-    """Direct verify call (optional) — mainly useful for debugging."""
+    """
+    Debug/verify helper (OpenAlex):
+    - Pick an OpenAlex author only if at least one CV title matches their works.
+    - Return the matched author id and the verified works list (against the CV).
+    """
     cv_text = ""
     if cv_id and cv_id in STORE:
         cv_text = STORE[cv_id].get("text", "")
         if not person_name:
-            person_name = STORE[cv_id]["profile"].get("name")
+            person_name = (STORE[cv_id].get("profile") or {}).get("name")
 
     author_id = None
     if person_name:
-        author_id = ss_find_author_by_name(person_name)
+        author_id = oa_pick_author_by_cv(person_name, cv_text)
 
     pubs = []
     if author_id:
-        pubs = ss_author_papers(author_id, limit=100)
+        works = oa_author_works(author_id, per_page=200) or []
+        for w in works:
+            pubs.append({
+                "title": w.get("display_name") or "",
+                "year": w.get("publication_year") or 0,
+                "venue": (w.get("host_venue") or {}).get("display_name") or "",
+                "url": (
+                    (w.get("primary_location") or {}).get("landing_page_url")
+                    or (w.get("primary_location") or {}).get("source", {}).get("url")
+                    or (w.get("ids") or {}).get("doi") or ""
+                ),
+                "authors": [
+                    (a.get("author") or {}).get("display_name")
+                    for a in (w.get("authorships") or [])
+                    if (a.get("author") or {}).get("display_name")
+                ],
+                "citations": int(w.get("cited_by_count") or 0),
+            })
 
     verified, metrics = verify_publications_against_cv(pubs, cv_text or "")
     return {"authorId": author_id, "publications": verified, "metrics": metrics}

@@ -278,6 +278,223 @@ def guess_research_areas(txt: str) -> List[str]:
     norm = {"Artificial Intelligence":"AI"}
     return [norm.get(x,x) for x in found]
 
+# === OpenAlex robust matching helpers ===
+import os, re, unicodedata, requests
+from typing import Optional, Iterable
+from rapidfuzz import fuzz, process
+
+OA_BASE = os.getenv("OPENALEX_BASE", "https://api.openalex.org").rstrip("/")
+OA_CONTACT = os.getenv("OPENALEX_CONTACT", "").strip()  # e.g., "you@org.com"
+
+def _oa_params(extra: dict | None = None):
+    p = dict(extra or {})
+    if OA_CONTACT:
+        p["mailto"] = OA_CONTACT
+    return p
+
+def oa_search_authors(name: str, limit: int = 10) -> list[dict]:
+    if not name: return []
+    try:
+        r = requests.get(f"{OA_BASE}/authors",
+                         params=_oa_params({"search": name, "per_page": limit}),
+                         timeout=20)
+        if r.ok:
+            return (r.json() or {}).get("results") or []
+        else:
+            print("OpenAlex author search error:", r.status_code, r.text[:300])
+    except Exception as e:
+        print("OpenAlex author search exception:", e)
+    return []
+
+def oa_author_works(author_id: str, per_page: int = 200) -> list[dict]:
+    if not author_id: return []
+    try:
+        r = requests.get(f"{OA_BASE}/works",
+                         params=_oa_params({"filter": f"author.id:{author_id}", "per_page": per_page}),
+                         timeout=30)
+        if r.ok:
+            return (r.json() or {}).get("results") or []
+        else:
+            print("OpenAlex works error:", r.status_code, r.text[:300])
+    except Exception as e:
+        print("OpenAlex works exception:", e)
+    return []
+
+def oa_author_works_all(author_id: str, max_pages: int = 2) -> list[dict]:
+    """Fetch up to ~400 works (2 pages × 200)."""
+    allw = []
+    page = 1
+    while page <= max_pages:
+        try:
+            r = requests.get(f"{OA_BASE}/works",
+                             params=_oa_params({
+                                 "filter": f"author.id:{author_id}",
+                                 "per_page": 200,
+                                 "page": page
+                             }),
+                             timeout=30)
+            if not r.ok: break
+            j = r.json() or {}
+            batch = j.get("results") or []
+            allw.extend(batch)
+            if not batch or len(batch) < 200: break
+            page += 1
+        except Exception as e:
+            print("OpenAlex works paged exception:", e)
+            break
+    return allw
+
+# --- CV parsing + normalization ---
+
+_TITLE_SPLIT = re.compile(r'[:\-–|]\s+')
+_DOI_RE = re.compile(r'\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b', re.I)
+
+def normalize_title(t: str) -> str:
+    """Lowercase, strip accents, collapse spaces, drop punctuation, trim subtitles."""
+    if not t: return ""
+    # remove subtitles after colon/dash to handle “Main title: subtitle”
+    t = _TITLE_SPLIT.split(t, 1)[0]
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = t.lower()
+    # keep alnum and spaces
+    t = re.sub(r"[^a-z0-9\s]", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+def extract_cv_titles(cv_titles_or_text: Iterable[str] | str) -> list[str]:
+    """Accept a list of titles OR raw CV text; return a list of normalized titles."""
+    titles: list[str] = []
+    if isinstance(cv_titles_or_text, (list, tuple)):
+        for t in cv_titles_or_text:
+            nt = normalize_title(t)
+            if nt: titles.append(nt)
+    else:
+        # rough extraction from text: lines that look like paper titles (fallback)
+        for line in (cv_titles_or_text or "").splitlines():
+            line = line.strip()
+            if len(line) >= 8 and any(ch.isalpha() for ch in line):
+                nt = normalize_title(line)
+                if len(nt.split()) >= 3:  # avoid tiny lines
+                    titles.append(nt)
+    # de-dup
+    seen, out = set(), []
+    for t in titles:
+        if t and t not in seen:
+            seen.add(t); out.append(t)
+    return out
+
+def extract_dois_from_cv(cv_text: str) -> set[str]:
+    return set(m.group(0).lower() for m in _DOI_RE.finditer(cv_text or ""))
+
+def work_main_title(w: dict) -> str:
+    return normalize_title(w.get("display_name") or "")
+
+def work_doi(w: dict) -> Optional[str]:
+    doi = (w.get("ids") or {}).get("doi") or ""
+    return doi.lower() if doi else None
+
+def author_affiliation_str(author_obj: dict) -> str:
+    """Join institution/display names OpenAlex provides for the author."""
+    parts = []
+    inst = author_obj.get("last_known_institution") or {}
+    if isinstance(inst, dict):
+        nm = inst.get("display_name")
+        if nm: parts.append(nm)
+    # some candidates have "institutions" array
+    for i in author_obj.get("institutions") or []:
+        nm = i.get("display_name")
+        if nm: parts.append(nm)
+    return " | ".join(parts)
+
+# --- Robust author picker ---
+def oa_pick_author_by_cv(
+    person_name: str,
+    cv_titles_or_text: Iterable[str] | str,
+    *,
+    cv_affiliation: Optional[str] = None,
+    high_thresh: int = 88,
+    mid_thresh: int = 75,
+) -> Optional[str]:
+    """
+    Return an OpenAlex author.id (URI) ONLY IF we are confident:
+      - DOI match with any work, OR
+      - max title similarity >= high_thresh, OR
+      - at least two titles >= mid_thresh (more tolerant),
+      (and optionally affiliation similarity helps tie-break).
+    Otherwise return None.
+    """
+    if not person_name:
+        return None
+
+    # Collect CV titles + DOIs
+    cv_titles = extract_cv_titles(cv_titles_or_text)
+    cv_dois   = extract_dois_from_cv(cv_titles_or_text if isinstance(cv_titles_or_text, str) else "")
+
+    if not cv_titles and not cv_dois:
+        return None
+
+    candidates = oa_search_authors(person_name, limit=10) or []
+    chosen_id, chosen_score = None, -1
+
+    for cand in candidates:
+        aid = cand.get("id") or cand.get("openalex")
+        if not aid:
+            continue
+
+        works = oa_author_works_all(aid, max_pages=2)  # up to ~400 works
+        if not works:
+            continue
+
+        # quick DOI shortcut (strongest signal)
+        if cv_dois:
+            w_dois = set(filter(None, (work_doi(w) for w in works)))
+            if w_dois & cv_dois:
+                return aid  # immediate accept
+
+        # title similarity stats
+        s_titles = [work_main_title(w) for w in works if work_main_title(w)]
+        max_sim = 0
+        count_mid = 0
+
+        # score each CV title against OpenAlex titles using multiple scorers; keep max
+        for t in cv_titles:
+            # try a few fuzz scorers and take the best
+            s1 = fuzz.token_set_ratio(t, s_titles, score_cutoff=0) if isinstance(s_titles, str) else 0
+            # fall back to manual best-of list
+            best_list = 0
+            for st in s_titles:
+                best_list = max(
+                    best_list,
+                    fuzz.token_set_ratio(t, st),
+                    fuzz.token_sort_ratio(t, st),
+                    fuzz.partial_ratio(t, st),
+                )
+            best = max(s1 or 0, best_list)
+            max_sim = max(max_sim, best)
+            if best >= mid_thresh:
+                count_mid += 1
+
+        # Affiliation nudge (non-blocking)
+        aff_boost = 0
+        if cv_affiliation:
+            a_aff = author_affiliation_str(cand)
+            if a_aff:
+                aff_boost = fuzz.token_set_ratio(cv_affiliation, a_aff)
+
+        # decide
+        strong = max_sim >= high_thresh
+        moderate = count_mid >= 2
+        boosted = (aff_boost >= 80 and max_sim >= (mid_thresh - 2))
+
+        if strong or moderate or boosted:
+            # prefer the best score across candidates
+            score_for_choice = max_sim + (aff_boost / 100.0)  # tiny boost
+            if score_for_choice > chosen_score:
+                chosen_score = score_for_choice
+                chosen_id = aid
+
+    return chosen_id
 # ------------- Semantic Scholar helpers -------------
 
 SS_BASE = "https://api.semanticscholar.org/graph/v1"
