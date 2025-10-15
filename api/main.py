@@ -16,6 +16,79 @@ from utils import (
     oa_pick_author_by_cv, oa_author_works,
 )
 
+# --- Title → tags (keywords) helper -----------------------------------------
+import re, unicodedata
+
+_TAG_STOP = {
+    # articles / conjunctions / preps / auxiliaries / misc
+    "the","a","an","and","or","of","in","on","for","to","with","by","from","at","as","into","about","over","after","before","between",
+    "is","are","was","were","be","being","been","has","have","had","do","does","did","can","could","may","might","should","would","will",
+    "not","no","yes","via","using","use","based","approach","toward","towards","under","without","within","across","per","vs","versus",
+    "we","our","their","its","your","you","they","one","two","three",
+    # common academic filler
+    "study","analysis","review","systematic","scoping","meta","meta-analysis","case","report","results","effect","effects","method","methods",
+    "model","models","modelling","modeling","dataset","data","evidence","trial","randomized","controlled","protocol","framework",
+    "outcome","outcomes","impact","impacts","evaluation","assessing","assessment","improving","improvement","exploring","exploration",
+}
+
+def _norm_words(title: str) -> list[str]:
+    if not title:
+        return []
+    # strip accents/punct, lower, collapse spaces
+    t = unicodedata.normalize("NFKD", title)
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    t = t.lower()
+    t = re.sub(r"[-–—/]", " ", t)                 # dash-like → space
+    t = re.sub(r"[^a-z0-9\s]", " ", t)            # drop punctuation
+    t = re.sub(r"\s+", " ", t).strip()
+    return [w for w in t.split(" ") if w and w not in _TAG_STOP and not w.isdigit() and len(w) > 2]
+
+def _bigrams(tokens: list[str]) -> list[str]:
+    out = []
+    for i in range(len(tokens)-1):
+        a, b = tokens[i], tokens[i+1]
+        if a in _TAG_STOP or b in _TAG_STOP:
+            continue
+        if len(a) < 3 or len(b) < 3:
+            continue
+        out.append(f"{a} {b}")
+    return out
+
+def extract_title_tags(title: str, max_tags: int = 7) -> list[str]:
+    """
+    Lightweight keywording from a title:
+      1) informative unigrams (de-stopped, de-puncted, lowercased),
+      2) high-signal bigrams,
+      3) de-duplicate and cap.
+    """
+    toks = _norm_words(title)
+    if not toks:
+        return []
+    bigs = _bigrams(toks)
+
+    # crude scoring: prefer bigrams, then rarer/longer words
+    scored = []
+    for bg in bigs:
+        scored.append((bg, 3 + sum(len(w) > 6 for w in bg.split())))
+    for w in toks:
+        scored.append((w, 1 + (2 if len(w) > 7 else 0)))
+
+    best = {}
+    for k, s in scored:
+        if k not in best or s > best[k]:
+            best[k] = s
+
+    tags = [k for k, _ in sorted(best.items(), key=lambda kv: kv[1], reverse=True)]
+    out, seen = [], set()
+    for t in tags:
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+        if len(out) >= max_tags:
+            break
+    return out
+# ---------------------------------------------------------------------------
+
 # ----------------------------
 # Models / helpers
 # ----------------------------
@@ -478,6 +551,7 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
                     "url": url,
                     "authors": authors,
                     "citations": int(w.get("cited_by_count") or 0),
+                    "tags": extract_title_tags(title),
                     "source": "openalex",
                 })
         except Exception:
@@ -497,6 +571,7 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
         authors = p.get("authors") or []
         if authors and isinstance(authors[0], dict):
             authors = [a.get("name") for a in authors if a.get("name")]
+        tags = p.get("tags") or extract_title_tags(title)
         out.append({
             "title": title,
             "venue": venue,
@@ -504,6 +579,7 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
             "citations": int(p.get("citations") or 0),
             "url": url,
             "authors": authors,
+            "tags": tags,
         })
 
     ACTIVE["publications"] = {"publications": out, "authorId": author_id, "name": name, "metrics": metrics}
@@ -720,6 +796,12 @@ def api_page_save(payload: dict = Body(...)):
         keep = {k: v for k, v in cur_active.items() if k in ("authorId", "name")}
         merged = _deep_merge(cur_active.copy(), data)
         merged.update(keep)  # put authorId/name back if data didn't include them
+        # Backfill tags for any publication with empty/missing tags
+        pubs = merged.get("publications") or []
+        for item in pubs:
+            if not item.get("tags"):
+                item["tags"] = extract_title_tags(item.get("title") or "")
+        merged["publications"] = pubs
         ACTIVE[page] = merged
     else:
         ACTIVE[page] = _deep_merge(cur_active.copy(), data)
