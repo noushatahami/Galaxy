@@ -305,7 +305,7 @@
 										</div>
 										<!--end::Page title-->
 										<!--begin::Actions-->
-										<button id="editToggle" class="btn btn-sm btn-success ms-3 px-4 py-3">Edit</button>
+										<button id="editToggle" class="btn btn-sm btn-success ms-3 px-4 py-3">Edit Mode: OFF</button>
 										<!--end::Actions-->
 									</div>
 									<!--end::Toolbar wrapper-->
@@ -328,15 +328,25 @@
 								}
 								.card-3d:hover { transform: translateY(-3px); box-shadow: 0 14px 26px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08); }
 								.card-3d .card-header { border-bottom: 1px solid rgba(255,255,255,.07); }
-								</style>
-								<style>
 								.legend-item{ display:flex; align-items:center; justify-content:space-between; padding:.35rem .5rem; border:1px dashed rgba(255,255,255,.08); border-radius:10px; }
 								.legend-item + .legend-item{ margin-top:.5rem; }
 								.legend-dot{ width:10px; height:10px; border-radius:50%; margin-right:.5rem; display:inline-block; }
 								.legend-left{ display:flex; align-items:center; gap:.5rem; }
 								.legend-right{ opacity:.75; font-size:.9em; }
 								#grants_donut svg text{ font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; }
+								
+								/* Editable cells */
+								.editable-cell { cursor: pointer; position: relative; }
+								.editable-cell:hover { background: rgba(255,255,255,.05); }
+								.editable-cell input { 
+									width: 100%; 
+									border: 1px solid #4caf50; 
+									background: rgba(76,175,80,.1); 
+									padding: 4px 8px; 
+									border-radius: 4px; 
+								}
 								</style>
+
 								<div class="row g-6">
 								<!-- LEFT/MIDDLE (xl:8 cols) -->
 								<div class="col-xl-8">
@@ -347,7 +357,7 @@
 										<div class="card-header"><h3 class="card-title fw-bold m-0">Total Grants Awarded</h3></div>
 										<div class="card-body">
 											<div class="fw-bold fs-3" id="total_grants_awarded">—</div>
-											<div class="text-gray-400 fs-7">Change/Note here</div>
+											<div class="text-gray-400 fs-7">Total amount awarded</div>
 										</div>
 										</div>
 									</div>
@@ -356,27 +366,40 @@
 										<div class="card-header"><h3 class="card-title fw-bold m-0">Available Budget</h3></div>
 										<div class="card-body">
 											<div class="fw-bold fs-3" id="available_budget">—</div>
-											<div class="text-gray-400 fs-7">Change/Note here</div>
+											<div class="text-gray-400 fs-7">Money received minus spent</div>
 										</div>
 										</div>
 									</div>
 									</div>
 
-									<!-- Last Awarded Grant -->
+									<!-- All Grants Table -->
 									<div class="card card-3d mb-6">
-									<div class="card-header"><h3 class="card-title fw-bold m-0">Last Awarded Grant</h3></div>
+									<div class="card-header">
+										<h3 class="card-title fw-bold m-0">All Grants</h3>
+										<div class="card-toolbar">
+											<span class="badge badge-light-primary" id="grants_count">0 grants</span>
+										</div>
+									</div>
 									<div class="card-body">
-										<ul class="list-unstyled mb-0" id="last_awarded_grant">
-										<li><strong>Title:</strong> —</li>
-										<li><strong>Grant ID:</strong> —</li>
-										<li><strong>Agency:</strong> —</li>
-										<li><strong>Type:</strong> —</li>
-										<li><strong>Duration:</strong> —</li>
-										<li><strong>Amount Awarded:</strong> —</li>
-										<li><strong>Amount Received:</strong> —</li>
-										<li><strong>Amount Spent:</strong> —</li>
-										<li><strong>Tags:</strong> <span class="badge bg-secondary">—</span></li>
-										</ul>
+										<div class="table-responsive">
+										<table class="table table-row-bordered table-hover align-middle gs-4 gy-3" id="grants_table">
+											<thead>
+											<tr class="fw-bold text-muted bg-light">
+												<th class="min-w-200px">Title</th>
+												<th class="min-w-150px">Agency</th>
+												<th class="min-w-100px text-end">Awarded</th>
+												<th class="min-w-100px text-end">Received</th>
+												<th class="min-w-100px text-end">Spent</th>
+												<th class="min-w-80px text-center">Actions</th>
+											</tr>
+											</thead>
+											<tbody id="grants_tbody">
+											<tr>
+												<td colspan="6" class="text-center text-gray-400">Loading grants...</td>
+											</tr>
+											</tbody>
+										</table>
+										</div>
 									</div>
 									</div>
 								</div>
@@ -539,178 +562,295 @@
 		<script src="assets/js/custom/galaxy/grants.js" type="module"></script>
 		<!--end::Javascript-->
 		<script type="module">
-		/* ========= Grants Breakdown Donut =========
-		Sums (Awarded, Received, Spent) across all grants.
-		Remaining = max(Awarded - Spent, 0).
-		Data sources (in order): window.GALAXY.data.grants → localStorage('galaxy_grants') → /api/grants
-		*/
+		/* ========= Grants Dashboard ========= */
 		const isLocal = ['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname);
 		const API = isLocal ? 'http://127.0.0.1:3001/api' : '/api';
 		const $ = (id)=>document.getElementById(id);
 
+		let EDIT_MODE = false;
+		let grantsData = [];
+
 		function readCache(key){ try{ return JSON.parse(localStorage.getItem(key)||'null'); }catch{ return null; } }
+		function saveCache(key, data){ try{ localStorage.setItem(key, JSON.stringify(data)); }catch{} }
 		async function getJSON(url){ try{ const r = await fetch(url, {cache:'no-store'}); return r.ok ? r.json() : null; }catch{ return null; } }
+		
 		function nz(x){
 			if (typeof x === 'string') x = x.replace(/[$,]/g,'');
-				const n = Number(x);
-				return Number.isFinite(n) && n > 0 ? n : 0;
+			const n = Number(x);
+			return Number.isFinite(n) && n > 0 ? n : 0;
 		}
 
-		function amountAwarded(g){
-			return nz(
-				g.amountAwarded ?? g.amount_awarded ?? g.awarded ??
-				g.amount ?? g.total_amount ?? g.value ?? g.budget?.total
-			);
-		}
-		function amountReceived(g){
-			return nz(
-				g.amountReceived ?? g.amount_received ?? g.received ?? g.budget?.received
-			);
-		}
-		function amountSpent(g){
-			return nz(
-				g.amountSpent ?? g.amount_spent ?? g.spent ?? g.budget?.spent
-			);
-		}
+		function amountAwarded(g){ return nz(g.amountAwarded ?? g.amount_awarded ?? g.awarded ?? g.amount ?? g.total_amount ?? g.value ?? g.budget?.total); }
+		function amountReceived(g){ return nz(g.amountReceived ?? g.amount_received ?? g.received ?? g.budget?.received); }
+		function amountSpent(g){ return nz(g.amountSpent ?? g.amount_spent ?? g.spent ?? g.budget?.spent); }
 
+		function fmtMoney(n){ return `$${Number(n||0).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`; }
 		function fmtMoneyShort(n){
-		n = Number(n)||0; const a = Math.abs(n);
-		if (a >= 1e9) return `$${(n/1e9).toFixed(1)}B`;
-		if (a >= 1e6) return `$${(n/1e6).toFixed(1)}M`;
-		if (a >= 1e3) return `$${(n/1e3).toFixed(1)}k`;
-		return `$${n.toFixed(0)}`;
+			n = Number(n)||0; const a = Math.abs(n);
+			if (a >= 1e9) return `$${(n/1e9).toFixed(1)}B`;
+			if (a >= 1e6) return `$${(n/1e6).toFixed(1)}M`;
+			if (a >= 1e3) return `$${(n/1e3).toFixed(1)}k`;
+			return `$${n.toFixed(0)}`;
 		}
 
 		async function loadGrants(){
-		const store = (window.GALAXY && window.GALAXY.data && window.GALAXY.data.grants) || null;
-		if (Array.isArray(store)) return store;
-		const cached = readCache('galaxy_grants');
-		if (cached && Array.isArray(cached.grants)) return cached.grants;
-		if (Array.isArray(cached)) return cached;
-		const api = await getJSON(`${API}/grants`);
-		if (api && Array.isArray(api.grants)) return api.grants;
-		return Array.isArray(api) ? api : [];
+			const store = (window.GALAXY && window.GALAXY.data && window.GALAXY.data.grants) || null;
+			if (Array.isArray(store)) return store;
+			const cached = readCache('galaxy_grants');
+			if (cached && Array.isArray(cached.grants)) return cached.grants;
+			if (Array.isArray(cached)) return cached;
+			const api = await getJSON(`${API}/grants`);
+			if (api && Array.isArray(api.grants)) return api.grants;
+			return Array.isArray(api) ? api : [];
 		}
 
 		function computeTotals(grants){
-		const awarded  = grants.reduce((a,g)=>a + amountAwarded(g), 0);
-		const received = grants.reduce((a,g)=>a + amountReceived(g), 0);
-		const spent    = grants.reduce((a,g)=>a + amountSpent(g), 0);
-		const remaining= Math.max(0, awarded - spent);
-		return {awarded, received, spent, remaining};
+			const awarded  = grants.reduce((a,g)=>a + amountAwarded(g), 0);
+			const received = grants.reduce((a,g)=>a + amountReceived(g), 0);
+			const spent    = grants.reduce((a,g)=>a + amountSpent(g), 0);
+			const available= Math.max(0, received - spent);
+			return {awarded, received, spent, available};
 		}
 
-		/* ----- SVG donut renderer (pure SVG, DPR-aware) ----- */
+		/* ===== Render Grants Table ===== */
+		function renderGrantsTable(grants){
+			const tbody = $('grants_tbody');
+			if(!tbody) return;
+
+			if(!grants || grants.length === 0){
+				tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400">No grants found</td></tr>';
+				$('grants_count').textContent = '0 grants';
+				return;
+			}
+
+			$('grants_count').textContent = `${grants.length} grant${grants.length !== 1 ? 's' : ''}`;
+
+			tbody.innerHTML = grants.map((g, idx)=>{
+				const awarded = amountAwarded(g);
+				const received = amountReceived(g);
+				const spent = amountSpent(g);
+
+				return `<tr data-grant-index="${idx}">
+					<td class="editable-cell" data-field="title">${g.title || '—'}</td>
+					<td class="editable-cell" data-field="agency">${g.agency || '—'}</td>
+					<td class="text-end editable-cell" data-field="amountAwarded">${fmtMoney(awarded)}</td>
+					<td class="text-end editable-cell" data-field="amountReceived">${fmtMoney(received)}</td>
+					<td class="text-end editable-cell" data-field="amountSpent">${fmtMoney(spent)}</td>
+					<td class="text-center">
+						<button class="btn btn-sm btn-icon btn-light-danger delete-grant" data-grant-index="${idx}">
+							<i class="ki-duotone ki-trash fs-5"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span><span class="path5"></span></i>
+						</button>
+					</td>
+				</tr>`;
+			}).join('');
+
+			// Attach event listeners for editable cells
+			tbody.querySelectorAll('.editable-cell').forEach(cell=>{
+				cell.addEventListener('click', ()=>{ if(EDIT_MODE) editCell(cell); });
+			});
+
+			// Attach delete button listeners
+			tbody.querySelectorAll('.delete-grant').forEach(btn=>{
+				btn.addEventListener('click', ()=>{ 
+					if(EDIT_MODE){
+						const idx = parseInt(btn.getAttribute('data-grant-index'));
+						deleteGrant(idx);
+					}
+				});
+			});
+		}
+
+		/* ===== Edit Cell ===== */
+		function editCell(cell){
+			const row = cell.closest('tr');
+			const grantIndex = parseInt(row.getAttribute('data-grant-index'));
+			const field = cell.getAttribute('data-field');
+			const currentValue = grantsData[grantIndex][field] || '';
+
+			const input = document.createElement('input');
+			input.type = 'text';
+			input.value = currentValue;
+			input.classList.add('form-control', 'form-control-sm');
+			
+			cell.innerHTML = '';
+			cell.appendChild(input);
+			input.focus();
+			input.select();
+
+			const saveEdit = ()=>{
+				let newValue = input.value.trim();
+				
+				// Convert to number for amount fields
+				if(field.startsWith('amount')){
+					newValue = nz(newValue);
+					grantsData[grantIndex][field] = newValue;
+					cell.textContent = fmtMoney(newValue);
+				} else {
+					grantsData[grantIndex][field] = newValue;
+					cell.textContent = newValue || '—';
+				}
+				
+				saveGrantsData();
+				updateDashboard();
+			};
+
+			input.addEventListener('blur', saveEdit);
+			input.addEventListener('keydown', (e)=>{
+				if(e.key === 'Enter'){ saveEdit(); }
+				if(e.key === 'Escape'){ 
+					cell.textContent = currentValue || '—'; 
+				}
+			});
+		}
+
+		/* ===== Delete Grant ===== */
+		function deleteGrant(index){
+			if(!confirm(`Are you sure you want to delete "${grantsData[index].title || 'this grant'}"?`)) return;
+			
+			grantsData.splice(index, 1);
+			saveGrantsData();
+			renderGrantsTable(grantsData);
+			updateDashboard();
+		}
+
+		/* ===== Save to localStorage ===== */
+		function saveGrantsData(){
+			saveCache('galaxy_grants', { grants: grantsData });
+			window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
+		}
+
+		/* ===== Update Dashboard Stats ===== */
+		function updateDashboard(){
+			const t = computeTotals(grantsData);
+			
+			if($('total_grants_awarded')) $('total_grants_awarded').textContent = fmtMoney(t.awarded);
+			if($('available_budget')) $('available_budget').textContent = fmtMoney(t.available);
+
+			initDonut();
+		}
+
+		/* ===== Edit Toggle ===== */
+		$('editToggle')?.addEventListener('click', ()=>{
+			EDIT_MODE = !EDIT_MODE;
+			$('editToggle').textContent = EDIT_MODE ? 'Edit Mode: ON' : 'Edit Mode: OFF';
+			$('editToggle').classList.toggle('btn-success', !EDIT_MODE);
+			$('editToggle').classList.toggle('btn-danger', EDIT_MODE);
+		});
+
+		/* ===== Initialize ===== */
+		async function init(){
+			grantsData = await loadGrants();
+			renderGrantsTable(grantsData);
+			updateDashboard();
+		}
+
+		init();
+
+		/* ========= Donut Chart ========= */
 		function renderDonut(container, segments, options={}){
-		const wrap = container;
-		wrap.innerHTML = '';                      // clear
-		const size = Math.min(wrap.clientWidth || 320, wrap.clientHeight || wrap.clientWidth || 320);
-		const W = size, H = size, cx = W/2, cy = H/2;
-		const strokeW = options.strokeWidth ?? Math.round(W * 0.16);
-		const r = Math.round((Math.min(W,H) - strokeW) / 2);  // radius
+			const wrap = container;
+			wrap.innerHTML = '';
+			const size = Math.min(wrap.clientWidth || 320, wrap.clientHeight || wrap.clientWidth || 320);
+			const W = size, H = size, cx = W/2, cy = H/2;
+			const strokeW = options.strokeWidth ?? Math.round(W * 0.16);
+			const r = Math.round((Math.min(W,H) - strokeW) / 2);
 
-		const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-		svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-		svg.setAttribute('width', '100%');
-		svg.setAttribute('height','100%');
+			const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+			svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+			svg.setAttribute('width', '100%');
+			svg.setAttribute('height','100%');
 
-		// Background ring
-		const bg = document.createElementNS(svg.namespaceURI,'circle');
-		bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r);
-		bg.setAttribute('fill','none'); bg.setAttribute('stroke','rgba(255,255,255,.08)'); bg.setAttribute('stroke-width', strokeW);
-		svg.appendChild(bg);
+			const bg = document.createElementNS(svg.namespaceURI,'circle');
+			bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r);
+			bg.setAttribute('fill','none'); bg.setAttribute('stroke','rgba(255,255,255,.08)'); bg.setAttribute('stroke-width', strokeW);
+			svg.appendChild(bg);
 
-		const total = segments.reduce((a,s)=>a + s.value, 0) || 1;
-		let startAngle = -90; // start at top
+			const total = segments.reduce((a,s)=>a + s.value, 0) || 1;
+			let startAngle = -90;
 
-		segments.forEach(seg=>{
-			const angle = (seg.value / total) * 360;
-			const endAngle = startAngle + angle;
+			segments.forEach(seg=>{
+				const angle = (seg.value / total) * 360;
+				const endAngle = startAngle + angle;
+				const largeArc = angle > 180 ? 1 : 0;
+				const a0 = (Math.PI/180) * startAngle;
+				const a1 = (Math.PI/180) * endAngle;
+				const x0 = cx + r * Math.cos(a0);
+				const y0 = cy + r * Math.sin(a0);
+				const x1 = cx + r * Math.cos(a1);
+				const y1 = cy + r * Math.sin(a1);
 
-			const largeArc = angle > 180 ? 1 : 0;
-			const a0 = (Math.PI/180) * startAngle;
-			const a1 = (Math.PI/180) * endAngle;
+				const path = document.createElementNS(svg.namespaceURI,'path');
+				path.setAttribute('d', `M ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1}`);
+				path.setAttribute('fill','none');
+				path.setAttribute('stroke', seg.color);
+				path.setAttribute('stroke-linecap','round');
+				path.setAttribute('stroke-width', strokeW);
+				path.setAttribute('opacity','0.95');
+				svg.appendChild(path);
 
-			const x0 = cx + r * Math.cos(a0);
-			const y0 = cy + r * Math.sin(a0);
-			const x1 = cx + r * Math.cos(a1);
-			const y1 = cy + r * Math.sin(a1);
+				startAngle = endAngle;
+			});
 
-			// Path for arc, then stroke-fatten by using stroke-width
-			const path = document.createElementNS(svg.namespaceURI,'path');
-			path.setAttribute('d', `M ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1}`);
-			path.setAttribute('fill','none');
-			path.setAttribute('stroke', seg.color);
-			path.setAttribute('stroke-linecap','round');
-			path.setAttribute('stroke-width', strokeW);
-			path.setAttribute('opacity','0.95');
-			svg.appendChild(path);
+			const centerValue = options.centerValue ?? total;
+			const centerLabel = options.centerLabel ?? 'Total';
+			
+			const main = document.createElementNS(svg.namespaceURI,'text');
+			main.setAttribute('x', cx); main.setAttribute('y', cy - 4);
+			main.setAttribute('text-anchor','middle'); main.setAttribute('dominant-baseline','middle');
+			main.setAttribute('font-size', Math.round(W*0.12)); main.setAttribute('font-weight','800');
+			main.textContent = fmtMoneyShort(centerValue);
+			svg.appendChild(main);
 
-			startAngle = endAngle;
-		});
+			const sub = document.createElementNS(svg.namespaceURI,'text');
+			sub.setAttribute('x', cx); sub.setAttribute('y', cy + W*0.10);
+			sub.setAttribute('text-anchor','middle'); sub.setAttribute('font-size', Math.round(W*0.04));
+			sub.setAttribute('fill','rgba(255,255,255,.7)');
+			sub.textContent = centerLabel;
+			svg.appendChild(sub);
 
-		// Center labels
-		const main = document.createElementNS(svg.namespaceURI,'text');
-		main.setAttribute('x', cx); main.setAttribute('y', cy - 4);
-		main.setAttribute('text-anchor','middle'); main.setAttribute('dominant-baseline','middle');
-		main.setAttribute('font-size', Math.round(W*0.12)); main.setAttribute('font-weight','800');
-		main.textContent = segments.find(s=>s.key==='awarded') ? fmtMoneyShort(segments.find(s=>s.key==='awarded').value) : '';
-		svg.appendChild(main);
-
-		const sub = document.createElementNS(svg.namespaceURI,'text');
-		sub.setAttribute('x', cx); sub.setAttribute('y', cy + W*0.10);
-		sub.setAttribute('text-anchor','middle'); sub.setAttribute('font-size', Math.round(W*0.04));
-		sub.setAttribute('fill','rgba(255,255,255,.7)');
-		sub.textContent = 'Total Awarded';
-		svg.appendChild(sub);
-
-		wrap.appendChild(svg);
+			wrap.appendChild(svg);
 		}
 
-		/* ----- Legend renderer ----- */
 		function renderLegend(container, segments){
-		container.innerHTML = segments.map(s=>{
-			return `<li class="legend-item">
-			<div class="legend-left"><span class="legend-dot" style="background:${s.color}"></span><span>${s.label}</span></div>
-			<div class="legend-right">${fmtMoneyShort(s.value)} · ${Math.round((s.value / (segments.reduce((a,x)=>a+x.value,0)||1))*100)}%</div>
-			</li>`;
-		}).join('');
+			const total = segments.reduce((a,s)=>a+s.value, 0) || 1;
+			container.innerHTML = segments.map(s=>{
+				const pct = Math.round((s.value / total)*100);
+				return `<li class="legend-item">
+				<div class="legend-left"><span class="legend-dot" style="background:${s.color}"></span><span>${s.label}</span></div>
+				<div class="legend-right">${fmtMoneyShort(s.value)} · ${pct}%</div>
+				</li>`;
+			}).join('');
 		}
 
-		/* ----- Init ----- */
 		async function initDonut(){
-		const donutBox = $('grants_donut');
-		const legend   = $('grants_donut_legend');
-		if(!donutBox || !legend) return;
+			const donutBox = $('grants_donut');
+			const legend   = $('grants_donut_legend');
+			if(!donutBox || !legend) return;
 
-		const grants = await loadGrants();
-		const t = computeTotals(grants);
+			const t = computeTotals(grantsData);
+			
+			// Create segments showing Awarded, Received, and Spent
+			// Each is a separate bar showing the total amounts
+			const segments = [
+				{ key:'awarded',   label:'Awarded',   value:t.awarded,   color:'hsl(210 85% 60%)' },  // Blue
+				{ key:'received',  label:'Received',  value:t.received,  color:'hsl(50 85% 60%)'  },  // Yellow
+				{ key:'spent',     label:'Spent',     value:t.spent,     color:'hsl(10 85% 60%)'  }   // Red
+			];
 
-		const segments = [
-			{ key:'spent',     label:'Spent',     value:t.spent,     color:'hsl(10 85% 60%)'  },
-			{ key:'received',  label:'Received',  value:t.received,  color:'hsl(210 85% 60%)' },
-			{ key:'remaining', label:'Remaining', value:t.remaining, color:'hsl(50 85% 60%)'  },
-			{ key:'awarded',   label:'Awarded',   value:t.awarded,   color:'hsl(140 70% 45%)' }
-		];
+			// Filter out zero values
+			const activeSegments = segments.filter(s => s.value > 0);
 
-		// order big → small for nicer arcs (optional)
-		segments.sort((a,b)=>b.value - a.value);
+			// Calculate total for the center display
+			const totalValue = t.awarded + t.received + t.spent;
 
-		renderDonut(donutBox, segments);
-		renderLegend(legend, segments);
+			renderDonut(donutBox, activeSegments, { centerLabel: 'Total Value', centerValue: totalValue });
+			renderLegend(legend, activeSegments);
 
-		// Keep it responsive
-		const ro = new ResizeObserver(()=>renderDonut(donutBox, segments));
-		ro.observe(donutBox);
-		}
-
-		window.addEventListener('storage', (e)=>{
-		if (e.key === 'galaxy_grants') initDonut();
-		});
+			const ro = new ResizeObserver(()=>renderDonut(donutBox, activeSegments, { centerLabel: 'Total Value', centerValue: totalValue }));
+			ro.observe(donutBox);
+			}
 
 		window.addEventListener('galaxy:grants:updated', initDonut);
-
-		initDonut();
 		</script>
 		</body>
 		</html>
