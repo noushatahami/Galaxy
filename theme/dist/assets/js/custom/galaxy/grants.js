@@ -153,12 +153,13 @@
 
     if (countBadge) countBadge.textContent = `${state.grants.length} grant${state.grants.length !== 1 ? 's' : ''}`;
 
+    // TINY TWEAK: make rows clickable (add class + data-index)
     tbody.innerHTML = state.grants.map((g, idx) => {
       const awarded = g.amountAwarded || g.amount || 0;
       const received = g.amountReceived || 0;
       const spent = g.amountSpent || 0;
 
-      return `<tr>
+      return `<tr class="grant-row" data-index="${idx}">
         <td>${g.title || '—'}</td>
         <td>${g.agency || '—'}</td>
         <td class="text-end">${fmtMoney(awarded)}</td>
@@ -169,6 +170,9 @@
         </td>
       </tr>`;
     }).join('');
+
+    // NEW: wire row click handler once
+    wireRowClicks();
   }
 
   function renderLastAwarded() {
@@ -244,6 +248,98 @@
     renderReports();
     renderKeywords();
     reflectEditMode();
+  }
+
+  /* ----------------------- NEW: grant details popup (view-only) ----------------------- */
+  function buildGrantDetailsView(g) {
+    const wrap = H('div','', '');
+    const grid = H('div','row g-4','');
+
+    const cell = (label, valueHtml) => {
+      const c = H('div','col-md-6','');
+      c.innerHTML = `
+        <div class="fw-semibold text-gray-500 mb-1">${label}</div>
+        <div class="fs-6">${valueHtml}</div>`;
+      return c;
+    };
+
+    const badgeList = (arr=[]) =>
+      (arr||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ') || '—';
+
+    const awarded  = g.amountAwarded || g.amount || 0;
+    const received = g.amountReceived || 0;
+    const spent    = g.amountSpent || 0;
+    const status   = received > 0 ? '<span class="badge badge-light-success">Active</span>' :
+                                    '<span class="badge badge-light-secondary">Pending</span>';
+
+    grid.appendChild(cell('Title', g.title ? String(g.title) : '—'));
+    grid.appendChild(cell('Grant ID', g.id || g.grantId || '—'));
+    grid.appendChild(cell('Agency', g.agency || '—'));
+    grid.appendChild(cell('Type', g.type || '—'));
+    grid.appendChild(cell('Duration', g.duration || '—'));
+    grid.appendChild(cell('Status', status));
+    grid.appendChild(cell('Amount Awarded', fmtMoney(awarded)));
+    grid.appendChild(cell('Amount Received', fmtMoney(received)));
+    grid.appendChild(cell('Amount Spent', fmtMoney(spent)));
+    grid.appendChild(cell('Awarded Date', g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'));
+    grid.appendChild(cell('Tags', badgeList(g.tags || g.keywords)));
+
+    if (g.url || g.link) {
+      grid.appendChild(cell('Link', `<a href="${g.url || g.link}" class="btn btn-sm btn-light-primary" target="_blank" rel="noopener">Open link</a>`));
+    }
+
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function showGrantDetails(g) {
+    const bodyNode = buildGrantDetailsView(g);
+    openViewModal('Grant Details', bodyNode);
+  }
+
+  // View-only modal wrapper that *does not* touch your existing openModal
+  function openViewModal(title, bodyNode) {
+    ensureModal();
+    $('#grants_modal .modal-title').textContent = title;
+    const body = $('#grants_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+
+    // Hide Save, relabel Cancel → Close (restore after hide)
+    const saveBtn   = $('#grants_modal_save');
+    const footer    = saveBtn.closest('.modal-footer');
+    const cancelBtn = footer.querySelector('[data-bs-dismiss="modal"]');
+
+    const prevCancelText = cancelBtn.textContent;
+    saveBtn.classList.add('d-none');
+    cancelBtn.textContent = 'Close';
+
+    const modalEl = $('#grants_modal');
+    const cleanup = () => {
+      saveBtn.classList.remove('d-none');
+      cancelBtn.textContent = prevCancelText;
+      modalEl.removeEventListener('hidden.bs.modal', cleanup);
+    };
+    modalEl.addEventListener('hidden.bs.modal', cleanup);
+
+    // Show it
+    if (!window.bootstrap || !window.bootstrap.Modal) {
+      // fallback if bootstrap isn't ready
+      return;
+    }
+    const bs = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bs.show();
+  }
+
+  function wireRowClicks() {
+    const tbody = $('#grants_tbody'); if (!tbody || tbody._wired) return;
+    tbody._wired = true;
+    tbody.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr.grant-row');
+      if (!tr) return;
+      const idx = Number(tr.getAttribute('data-index'));
+      if (!Number.isFinite(idx)) return;
+      const g = state.grants[idx];
+      if (g) showGrantDetails(g);
+    });
   }
 
   /* ----------------------- edit-mode UI ----------------------- */
