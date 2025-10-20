@@ -140,6 +140,41 @@
     if (availEl) availEl.textContent = fmtMoney(state.totals.availableBudget);
   }
 
+  function renderGrantsTable() {
+    const tbody = $('#grants_tbody');
+    const countBadge = $('#grants_count');
+    if (!tbody) return;
+
+    if (!state.grants?.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400">No grants found</td></tr>';
+      if (countBadge) countBadge.textContent = '0 grants';
+      return;
+    }
+
+    if (countBadge) countBadge.textContent = `${state.grants.length} grant${state.grants.length !== 1 ? 's' : ''}`;
+
+    // TINY TWEAK: make rows clickable (add class + data-index)
+    tbody.innerHTML = state.grants.map((g, idx) => {
+      const awarded = g.amountAwarded || g.amount || 0;
+      const received = g.amountReceived || 0;
+      const spent = g.amountSpent || 0;
+
+      return `<tr class="grant-row" data-index="${idx}">
+        <td>${g.title || '—'}</td>
+        <td>${g.agency || '—'}</td>
+        <td class="text-end">${fmtMoney(awarded)}</td>
+        <td class="text-end">${fmtMoney(received)}</td>
+        <td class="text-end">${fmtMoney(spent)}</td>
+        <td class="text-center">
+          <span class="badge ${received > 0 ? 'badge-light-success' : 'badge-light-secondary'}">${received > 0 ? 'Active' : 'Pending'}</span>
+        </td>
+      </tr>`;
+    }).join('');
+
+    // NEW: wire row click handler once
+    wireRowClicks();
+  }
+
   function renderLastAwarded() {
     const ul = $('#last_awarded_grant'); if (!ul) return;
     ul.innerHTML = '';
@@ -207,11 +242,104 @@
 
   function renderAll() {
     renderTotals();
+    renderGrantsTable();
     renderLastAwarded();
     renderBreakdown();
     renderReports();
     renderKeywords();
     reflectEditMode();
+  }
+
+  /* ----------------------- NEW: grant details popup (view-only) ----------------------- */
+  function buildGrantDetailsView(g) {
+    const wrap = H('div','', '');
+    const grid = H('div','row g-4','');
+
+    const cell = (label, valueHtml) => {
+      const c = H('div','col-md-6','');
+      c.innerHTML = `
+        <div class="fw-semibold text-gray-500 mb-1">${label}</div>
+        <div class="fs-6">${valueHtml}</div>`;
+      return c;
+    };
+
+    const badgeList = (arr=[]) =>
+      (arr||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ') || '—';
+
+    const awarded  = g.amountAwarded || g.amount || 0;
+    const received = g.amountReceived || 0;
+    const spent    = g.amountSpent || 0;
+    const status   = received > 0 ? '<span class="badge badge-light-success">Active</span>' :
+                                    '<span class="badge badge-light-secondary">Pending</span>';
+
+    grid.appendChild(cell('Title', g.title ? String(g.title) : '—'));
+    grid.appendChild(cell('Grant ID', g.id || g.grantId || '—'));
+    grid.appendChild(cell('Agency', g.agency || '—'));
+    grid.appendChild(cell('Type', g.type || '—'));
+    grid.appendChild(cell('Duration', g.duration || '—'));
+    grid.appendChild(cell('Status', status));
+    grid.appendChild(cell('Amount Awarded', fmtMoney(awarded)));
+    grid.appendChild(cell('Amount Received', fmtMoney(received)));
+    grid.appendChild(cell('Amount Spent', fmtMoney(spent)));
+    grid.appendChild(cell('Awarded Date', g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'));
+    grid.appendChild(cell('Tags', badgeList(g.tags || g.keywords)));
+
+    if (g.url || g.link) {
+      grid.appendChild(cell('Link', `<a href="${g.url || g.link}" class="btn btn-sm btn-light-primary" target="_blank" rel="noopener">Open link</a>`));
+    }
+
+    wrap.appendChild(grid);
+    return wrap;
+  }
+
+  function showGrantDetails(g) {
+    const bodyNode = buildGrantDetailsView(g);
+    openViewModal('Grant Details', bodyNode);
+  }
+
+  // View-only modal wrapper that *does not* touch your existing openModal
+  function openViewModal(title, bodyNode) {
+    ensureModal();
+    $('#grants_modal .modal-title').textContent = title;
+    const body = $('#grants_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+
+    // Hide Save, relabel Cancel → Close (restore after hide)
+    const saveBtn   = $('#grants_modal_save');
+    const footer    = saveBtn.closest('.modal-footer');
+    const cancelBtn = footer.querySelector('[data-bs-dismiss="modal"]');
+
+    const prevCancelText = cancelBtn.textContent;
+    saveBtn.classList.add('d-none');
+    cancelBtn.textContent = 'Close';
+
+    const modalEl = $('#grants_modal');
+    const cleanup = () => {
+      saveBtn.classList.remove('d-none');
+      cancelBtn.textContent = prevCancelText;
+      modalEl.removeEventListener('hidden.bs.modal', cleanup);
+    };
+    modalEl.addEventListener('hidden.bs.modal', cleanup);
+
+    // Show it
+    if (!window.bootstrap || !window.bootstrap.Modal) {
+      // fallback if bootstrap isn't ready
+      return;
+    }
+    const bs = bootstrap.Modal.getOrCreateInstance(modalEl);
+    bs.show();
+  }
+
+  function wireRowClicks() {
+    const tbody = $('#grants_tbody'); if (!tbody || tbody._wired) return;
+    tbody._wired = true;
+    tbody.addEventListener('click', (e) => {
+      const tr = e.target.closest('tr.grant-row');
+      if (!tr) return;
+      const idx = Number(tr.getAttribute('data-index'));
+      if (!Number.isFinite(idx)) return;
+      const g = state.grants[idx];
+      if (g) showGrantDetails(g);
+    });
   }
 
   /* ----------------------- edit-mode UI ----------------------- */
@@ -232,6 +360,7 @@
   function ensureTinyButtons() {
     const cfgs = [
       { anchor:'#total_grants_awarded', title:'Edit Totals',          build: buildTotalsModal },
+      { anchor:'#grants_tbody',         title:'Edit All Grants',      build: buildAllGrantsModal },  // NEW
       { anchor:'#last_awarded_grant',   title:'Edit Last Awarded',    build: buildLastAwardedModal },
       { anchor:'#breakdown',            title:'Edit Breakdown',       build: buildBreakdownModal },
       { anchor:'#reports_grant_id',     title:'Edit Reports',         build: buildReportsModal },
@@ -285,7 +414,7 @@
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async () => {
       await onSave();                                // inputs -> state
-      await persistPage('grants', {                  // NEW
+      await persistPage('grants', {                  
         grants: state.grants,
         total_grants_awarded: { amount: state.totals?.totalAwarded ?? 0 },
         available_budget:    { amount: state.totals?.availableBudget ?? 0 },
@@ -331,6 +460,97 @@
       const ab = Number($('#in_available_budget').value||0) || 0;
       state.totals = { totalAwarded: ta, availableBudget: ab };
     };
+    return [wrap, onSave];
+  }
+
+  function buildAllGrantsModal() {
+    const {wrap, box} = labeled('All Grants');
+    const list = H('div','d-flex flex-column gap-3','');
+
+    const grantRow = (g = {}, idx = -1) => {
+      const r = H('div','p-3 rounded bg-white bg-opacity-5 border border-white border-opacity-10','');
+      r.innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Title</label>
+            <input class="grant-title form-control" value="${g.title||''}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Grant ID</label>
+            <input class="grant-id form-control" value="${g.id||g.grantId||''}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Agency</label>
+            <input class="grant-agency form-control" value="${g.agency||''}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Type</label>
+            <input class="grant-type form-control" value="${g.type||''}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Duration</label>
+            <input class="grant-duration form-control" value="${g.duration||''}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Amount Awarded</label>
+            <input class="grant-awarded form-control" value="${g.amountAwarded||g.amount||0}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Awarded Date</label>
+            <input class="grant-awardedAt form-control" type="date" value="${g.awardedAt ? new Date(g.awardedAt).toISOString().slice(0,10) : ''}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Amount Received</label>
+            <input class="grant-received form-control" value="${g.amountReceived||0}">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Amount Spent</label>
+            <input class="grant-spent form-control" value="${g.amountSpent||0}">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Tags (comma-separated)</label>
+            <input class="grant-tags form-control" value="${(g.tags||g.keywords||[]).join(', ')}">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-light-danger btn-sm remove-grant">Remove Grant</button>
+          </div>
+        </div>
+      `;
+      r.querySelector('.remove-grant').addEventListener('click', () => r.remove());
+      return r;
+    };
+
+    state.grants.forEach((g, idx) => list.appendChild(grantRow(g, idx)));
+
+    const addBtn = H('button','btn btn-light mt-2','+ Add Grant');
+    addBtn.addEventListener('click', () => list.appendChild(grantRow()));
+
+    box.appendChild(list);
+    box.appendChild(addBtn);
+
+    const onSave = () => {
+      const grants = [];
+      list.querySelectorAll(':scope > div').forEach(r => {
+        const obj = {
+          title: r.querySelector('.grant-title')?.value.trim() || '',
+          id: r.querySelector('.grant-id')?.value.trim() || undefined,
+          agency: r.querySelector('.grant-agency')?.value.trim() || undefined,
+          type: r.querySelector('.grant-type')?.value.trim() || undefined,
+          duration: r.querySelector('.grant-duration')?.value.trim() || undefined,
+          amountAwarded: Number(r.querySelector('.grant-awarded')?.value||0) || 0,
+          awardedAt: r.querySelector('.grant-awardedAt')?.value ? new Date(r.querySelector('.grant-awardedAt').value).toISOString() : undefined,
+          amountReceived: Number(r.querySelector('.grant-received')?.value||0) || 0,
+          amountSpent: Number(r.querySelector('.grant-spent')?.value||0) || 0,
+          tags: (r.querySelector('.grant-tags')?.value||'').split(',').map(s => s.trim()).filter(Boolean)
+        };
+        if (obj.title) grants.push(obj);
+      });
+      state.grants = grants;
+      deriveTotals();
+      deriveLastAwarded();
+      deriveKeywords();
+    };
+
     return [wrap, onSave];
   }
 
