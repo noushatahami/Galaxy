@@ -17,27 +17,100 @@
   <link href="/assets/plugins/custom/datatables/datatables.bundle.css" rel="stylesheet" type="text/css" />
 
   <style>
-    /* 3D card look */
+    /* Enhanced card styling - monochrome, no 3D lift */
     .card-3d{
-      border:1px solid rgba(255,255,255,.08);
-      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-      box-shadow:0 10px 20px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.06);
-      border-radius:16px;
-      transition:transform .15s ease, box-shadow .15s ease;
-      min-width:0; /* allow shrinking in flex layouts */
+      border:1px solid rgba(255,255,255,.12);
+      background:linear-gradient(135deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,.03) 100%);
+      box-shadow:
+        0 8px 32px rgba(0,0,0,.18),
+        0 2px 8px rgba(0,0,0,.12),
+        inset 0 1px 0 rgba(255,255,255,.1),
+        inset 0 -1px 0 rgba(0,0,0,.1);
+      border-radius:20px;
+      transition:all .3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      min-width:0;
     }
-    .card-3d:hover{ transform:translateY(-3px); box-shadow:0 14px 26px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08); }
-    .card-3d .card-header{ border-bottom:1px solid rgba(255,255,255,.07); }
+    
+    .card-3d:hover{ 
+      box-shadow:
+        0 12px 40px rgba(0,0,0,.22),
+        0 4px 12px rgba(0,0,0,.15),
+        inset 0 1px 0 rgba(255,255,255,.15);
+      border-color: rgba(255,255,255,.18);
+    }
+    
+    .card-3d .card-header{ 
+      border-bottom:1px solid rgba(255,255,255,.1); 
+      background: rgba(255,255,255,.03);
+      padding: 1.5rem 1.75rem;
+    }
+    
+    .card-3d .card-header h3 {
+      font-size: 1.1rem;
+      letter-spacing: 0.02em;
+    }
+    
+    .card-3d .card-header .card-title::before {
+      content: '';
+      display: inline-block;
+      width: 4px;
+      height: 20px;
+      background: rgba(255,255,255,.3);
+      margin-right: 12px;
+      border-radius: 2px;
+      vertical-align: middle;
+    }
+    
+    .card-3d .card-body {
+      padding: 1.75rem;
+    }
 
-    /* Harden the grid so nothing can force horizontal overflow */
+    /* Subtle glow on hover */
+    .card-3d::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 300px;
+      height: 300px;
+      background: radial-gradient(circle, rgba(255,255,255,.05) 0%, transparent 70%);
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      transition: opacity .3s ease;
+      pointer-events: none;
+    }
+    
+    .card-3d:hover::after {
+      opacity: 1;
+    }
+
+    /* List styling */
+    .card-3d ul li {
+      padding: 0.5rem 0;
+      border-bottom: 1px dashed rgba(255,255,255,.05);
+      transition: all .2s ease;
+    }
+    
+    .card-3d ul li:last-child {
+      border-bottom: none;
+    }
+    
+    .card-3d ul li:hover {
+      padding-left: 8px;
+      opacity: 0.8;
+    }
+
+    /* Harden the grid */
     .row { max-width:100%; overflow-x:hidden; }
     .col-xl-8, .col-xl-4 { min-width:0; }
     .col-xl-8 > *, .col-xl-4 > * { min-width:0; }
     .app-container, #kt_app_content_container { overflow-x:hidden; }
 
-    /* Research Topics word cloud fills the card body */
+    /* Research Topics word cloud */
     #research_topics_card .card-body{
-      height: 440px;         /* adjust height as you like */
+      height: 360px;
       padding: 1rem;
     }
     #rt_cloud_container{
@@ -46,84 +119,112 @@
       border: 1px dashed rgba(255,255,255,.15);
       border-radius: 12px;
       background: rgba(0,0,0,.12);
-      overflow: hidden;      /* absolutely no horizontal scrollbars */
+      overflow: hidden;
       box-sizing: border-box;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+    #rt_cloud_container:hover {
+      border-color: rgba(255,255,255,.25);
+      background: rgba(0,0,0,.15);
+      transform: scale(1.02);
     }
     #rt_wordcloud{
-      display: block;        /* regular block (not absolute) */
+      display: block;
       width: 100%;
       height: 100%;
       max-width: 100%;
       max-height: 100%;
     }
-
-    /* hide the lists so only the cloud shows (still used for fallback parsing) */
-    #research_topics_tags,
-    #rt_wordcloud_legend { display: none !important; }
-  </style>
-  <style>
-    /* Research Topics — responsive height + no clipping */
-    #research_topics_card .card-body {
-      height: 360px;
-      padding: 1rem;
-    }
-    #rt_cloud_container {
-      width: 100%;
-      height: 100%;
-      border: 1px dashed rgba(255,255,255,.15);
-      border-radius: 12px;
-      background: rgba(0,0,0,.12);
-      overflow: hidden;
-      box-sizing: border-box;
-    }
     @media (max-width: 1200px){ #research_topics_card .card-body { height: 320px; } }
     @media (max-width: 992px){  #research_topics_card .card-body { height: 280px; } }
     @media (max-width: 576px){  #research_topics_card .card-body { height: 240px; } }
+
+    /* hide the lists so only the cloud shows */
+    #research_topics_tags,
+    #rt_wordcloud_legend { display: none !important; }
+
+    /* Modal styling */
+    .rt-modal{
+      position:fixed; inset:0; z-index: 1100; display:none;
+      align-items:center; justify-content:center;
+    }
+    .rt-modal.is-open{ display:flex; }
+    .rt-modal__backdrop{
+      position:absolute; inset:0; background:rgba(0,0,0,.7); backdrop-filter: blur(4px);
+    }
+    .rt-modal__dialog{
+      position:relative; z-index:1;
+      width:min(1100px, calc(100vw - 32px));
+      height:min(800px, calc(100vh - 32px));
+      border-radius:20px; overflow:hidden;
+      background:linear-gradient(135deg, rgba(255,255,255,.08), rgba(255,255,255,.03));
+      border:1px solid rgba(255,255,255,.15);
+      box-shadow:0 20px 60px rgba(0,0,0,.5);
+      display:flex; flex-direction:column;
+    }
+    .rt-modal__header{
+      display:flex; align-items:center; justify-content:space-between;
+      padding:1rem 1.5rem;
+      border-bottom:1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.03);
+    }
+    .rt-modal__body{
+      flex:1; padding:8px;
+      background:rgba(0,0,0,.10);
+      border-top:1px dashed rgba(255,255,255,.08);
+    }
+    #rt_modal_container{ width:100%; height:100%; }
+    #rt_modal_canvas{ width:100%; height:100%; display:block; }
+    body.rt-modal-open{ overflow:hidden; }
+
+    /* Publication items styling */
+    .publication-item {
+      padding: 1.5rem;
+      border-radius: 12px;
+      background: rgba(255,255,255,.03);
+      border: 1px solid rgba(255,255,255,.08);
+      transition: all .2s ease;
+    }
+    .publication-item:hover {
+      background: rgba(255,255,255,.05);
+      border-color: rgba(255,255,255,.12);
+      transform: translateX(4px);
+    }
+
+    /* Badge styling */
+    .badge {
+      padding: .4rem .75rem;
+      border-radius: 999px;
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.15);
+      font-size: .875rem;
+      font-weight: 500;
+      transition: all .2s ease;
+    }
+    .badge:hover {
+      background: rgba(255,255,255,.15);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
   </style>
-  <style>
-  .rt-modal{
-    position:fixed; inset:0; z-index: 1100; display:none;
-    align-items:center; justify-content:center;
-  }
-  .rt-modal.is-open{ display:flex; }
-  .rt-modal__backdrop{
-    position:absolute; inset:0; background:rgba(0,0,0,.6); backdrop-filter: blur(2px);
-  }
-  .rt-modal__dialog{
-    position:relative; z-index:1;
-    width:min(1100px, calc(100vw - 32px));
-    height:min(800px, calc(100vh - 32px));
-    border-radius:16px; overflow:hidden;
-    background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-    border:1px solid rgba(255,255,255,.1);
-    box-shadow:0 20px 60px rgba(0,0,0,.45);
-    display:flex; flex-direction:column;
-  }
-  .rt-modal__header{
-    display:flex; align-items:center; justify-content:space-between;
-    padding:.75rem 1rem;
-    border-bottom:1px solid rgba(255,255,255,.08);
-  }
-  .rt-modal__body{
-    flex:1; padding:8px;
-    background:rgba(0,0,0,.10);
-    border-top:1px dashed rgba(255,255,255,.08);
-  }
-  #rt_modal_container{ width:100%; height:100%; }
-  #rt_modal_canvas{ width:100%; height:100%; display:block; }
-  /* Optional: prevent page from scrolling while modal is open */
-  body.rt-modal-open{ overflow:hidden; }
-</style>
 </head>
 <body id="kt_app_body" data-kt-app-header-fixed="true" data-kt-app-header-fixed-mobile="true" data-kt-app-sidebar-enabled="true" data-kt-app-sidebar-fixed="true" data-kt-app-sidebar-hoverable="true" data-kt-app-sidebar-push-toolbar="true" data-kt-app-sidebar-push-footer="true" data-kt-app-toolbar-enabled="true" data-kt-app-aside-enabled="true" data-kt-app-aside-fixed="true" data-kt-app-aside-push-toolbar="true" data-kt-app-aside-push-footer="true" class="app-default">
+
 <!-- Word Cloud Modal -->
 <div id="rt_modal" class="rt-modal" aria-hidden="true">
   <div class="rt-modal__backdrop"></div>
 
   <div class="rt-modal__dialog" role="dialog" aria-modal="true" aria-label="Research Topics">
     <div class="rt-modal__header">
-      <h3 class="m-0">Research Topics</h3>
-      <button id="rt_modal_close" class="btn btn-sm btn-light">Close</button>
+      <h3 class="m-0 fw-bold">Research Topics</h3>
+      <button id="rt_modal_close" class="btn btn-sm btn-light">
+        <i class="ki-duotone ki-cross fs-3">
+          <span class="path1"></span>
+          <span class="path2"></span>
+        </i>
+        Close
+      </button>
     </div>
 
     <div id="rt_modal_container" class="rt-modal__body">
@@ -131,6 +232,7 @@
     </div>
   </div>
 </div>
+
 <script>
   var defaultThemeMode="light";var themeMode;
   if(document.documentElement){
@@ -376,7 +478,7 @@
                     <li class="breadcrumb-item"><i class="ki-duotone ki-right fs-4 text-gray-700 mx-n1"></i></li>
                     <li class="breadcrumb-item text-gray-700">Publications</li>
                   </ul>
-                  <h1 class="page-heading d-flex flex-column justify-content-center text-dark fw-bolder fs-1 lh-0">Dashboard</h1>
+                  <h1 class="page-heading d-flex flex-column justify-content-center text-dark fw-bolder fs-1 lh-0">Publications Dashboard</h1>
                 </div>
                 <button id="editToggle" class="btn btn-sm btn-success ms-3 px-4 py-3">Edit</button>
               </div>
@@ -411,10 +513,10 @@
                         </div>
                       </div>
 
-                      <div id="publications_list" class="vstack gap-6">
-                        <div class="border-top border-gray-300 border-opacity-10 pt-4">
+                      <div id="publications_list" class="vstack gap-4">
+                        <div class="publication-item">
                           <div class="fw-semibold">—</div>
-                          <div class="text-gray-400">No publications yet.</div>
+                          <div class="text-gray-400 mt-2">No publications yet.</div>
                         </div>
                       </div>
                     </div>
@@ -440,7 +542,7 @@
                     </div>
                   </div>
 
-                  <!-- Top-Cited (restored) -->
+                  <!-- Top-Cited -->
                   <div class="card card-3d mb-6">
                     <div class="card-header align-items-center">
                       <h3 class="card-title fw-bold m-0">Top-Cited</h3>
@@ -457,6 +559,9 @@
                   <div class="card card-3d" id="research_topics_card">
                     <div class="card-header align-items-center">
                       <h3 class="card-title fw-bold m-0">Research Topics</h3>
+                      <div class="card-toolbar">
+                        <span class="badge badge-light">Click to expand</span>
+                      </div>
                     </div>
                     <div class="card-body">
                       <!-- keep for fallback parsing (hidden by CSS) -->
@@ -552,7 +657,6 @@
   const canvas = document.getElementById('rt_wordcloud');
   if(!container || !canvas) return;
   const ctx = canvas.getContext('2d');
-  // NEW: logical (CSS pixel) drawing size
   let vw = 0, vh = 0;
 
   const stopWords = new Set(("a,an,and,the,of,for,in,on,with,by,to,from,into,using,via,at,as,over,under,between,within,without,toward,against,new,study,approach,method,methods,analysis,model,models,system,systems,framework,design,case,data").split(','));
@@ -573,7 +677,6 @@
   function collectTopics(){
     const counts=new Map();
 
-    // Prefer tags from publications
     if(pubList){
       pubList.querySelectorAll('[data-tags]').forEach(el=>{
         splitMaybeList(el.getAttribute('data-tags')).forEach(t=>{
@@ -586,7 +689,6 @@
       });
     }
 
-    // Fallback to the topics list
     if(counts.size===0 && fallbackList){
       const chips=fallbackList.querySelectorAll('.badge,.chip,.tag,[data-topic]');
       if(chips.length){
@@ -606,7 +708,6 @@
 
   function drawCloud(){
     const words = collectTopics();
-    // clear logical area
     ctx.clearRect(0, 0, vw, vh);
     if(!words.length) return;
 
@@ -630,13 +731,13 @@
         const x = Math.round(center.x + Math.cos(ang)*rad - bw/2);
         const y = Math.round(center.y + Math.sin(ang)*rad - bh/2);
         const cand = { x, y, w: bw, h: bh };
-        if (x<2 || y<2 || x+bw>vw-2 || y+bh>vh-2) continue;   // use CSS-px bounds
+        if (x<2 || y<2 || x+bw>vw-2 || y+bh>vh-2) continue;
         if (!collides(cand)) { box=cand; break; }
       }
       if (box){
         const hue=(w.text.charCodeAt(0)*37 + w.text.length*17)%360;
         ctx.fillStyle = `hsl(${hue} 70% 60%)`;
-        ctx.fillText(w.text, box.x, box.y + box.h*0.85);      // draw in CSS px
+        ctx.fillText(w.text, box.x, box.y + box.h*0.85);
         placed.push(box);
       }
     });
@@ -648,11 +749,9 @@
     const h = Math.max(1, Math.floor(rect.height));
     const dpr = window.devicePixelRatio || 1;
 
-    // set bitmap size in device px
     canvas.width  = Math.round(w * dpr);
     canvas.height = Math.round(h * dpr);
 
-    // draw using CSS px; the transform scales to device px
     ctx.setTransform(dpr,0,0,dpr,0,0);
     vw = w; vh = h;
 
@@ -674,7 +773,6 @@
 </script>
 <script>
 (function(){
-  // Elements
   const smallContainer = document.getElementById('rt_cloud_container');
   const modal = document.getElementById('rt_modal');
   const modalClose = document.getElementById('rt_modal_close');
@@ -685,7 +783,6 @@
   const mctx = modalCanvas.getContext('2d');
   let mvw = 0, mvh = 0;
 
-  // --- Topic collection (same logic as the inline cloud) ---
   const pubList = document.getElementById('publications_list');
   const fallbackList = document.getElementById('research_topics_tags');
   const stopWords = new Set(("a,an,and,the,of,for,in,on,with,by,to,from,into,using,via,at,as,over,under,between,within,without,toward,against,new,study,approach,method,methods,analysis,model,models,system,systems,framework,design,case,data").split(','));
@@ -716,7 +813,6 @@
     return Array.from(counts,([text,count])=>({text,count})).sort((a,b)=>b.count-a.count).slice(0,120);
   }
 
-  // --- Draw the larger cloud (CSS-pixel aware) ---
   function drawModalCloud(){
     const words = collectTopics();
     mctx.clearRect(0,0,mvw,mvh);
@@ -766,7 +862,6 @@
   function openModal(){
     modal.classList.add('is-open');
     document.body.classList.add('rt-modal-open');
-    // Wait for layout, then fit & draw
     requestAnimationFrame(()=>{ fitModal(); });
   }
   function closeModal(){
@@ -774,14 +869,11 @@
     document.body.classList.remove('rt-modal-open');
   }
 
-  // Open from the small cloud
   smallContainer.addEventListener('click', openModal);
-  // Close handlers
   modalClose.addEventListener('click', closeModal);
   modal.addEventListener('click', (e)=>{ if(e.target.classList.contains('rt-modal__backdrop')) closeModal(); });
   document.addEventListener('keydown', (e)=>{ if(e.key==='Escape' && modal.classList.contains('is-open')) closeModal(); });
 
-  // Keep the large cloud crisp on window changes while open
   window.addEventListener('resize', ()=>{ if(modal.classList.contains('is-open')) fitModal(); }, {passive:true});
   window.addEventListener('orientationchange', ()=>{ if(modal.classList.contains('is-open')) fitModal(); }, {passive:true});
 })();
