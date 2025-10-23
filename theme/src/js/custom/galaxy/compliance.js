@@ -22,6 +22,30 @@
     contacts: []         // [{name, role, avatar}]
   };
 
+  /* ----------------------- helpers ----------------------- */
+  function normalizeStatus(s){
+    if(!s) return '';
+    const x = String(s).toLowerCase();
+    if (['pass','ok','yes','done','complete','compliant'].includes(x)) return 'compliant';
+    if (['pending','todo','in-progress','inprogress','open','review'].includes(x)) return 'pending';
+    if (['fail','failed','noncompliant','non-compliant','issue','risk','blocked'].includes(x)) return 'noncompliant';
+    return x;
+  }
+
+  // Recompute summary primarily from checkpoints. If zero checkpoints, keep server-provided summary.
+  function recomputeSummaryFromCheckpoints(){
+    const cps = Array.isArray(state.checkpoints) ? state.checkpoints : [];
+    if (!cps.length) return; // nothing to recompute
+    let compliant=0, pending=0, noncompliant=0;
+    cps.forEach(cp=>{
+      const st = normalizeStatus(cp.status);
+      if (st === 'compliant') compliant++;
+      else if (st === 'pending' || st === '') pending++; // blank treated as pending
+      else noncompliant++;
+    });
+    state.summary = { compliant, pending, noncompliant };
+  }
+
   /* ----------------------- persistence ----------------------- */
   function save(){ localStorage.setItem('galaxy_compliance', JSON.stringify(state)); }
   async function persistPage(page, data){
@@ -110,7 +134,10 @@
     state.quickActions= Array.isArray(state.quickActions)? state.quickActions: [];
     state.keyContacts = Array.isArray(state.keyContacts) ? state.keyContacts : [];
 
-    // 5) Cache the good stuff for snappy reloads
+    // 5) Recompute summary from live checkpoints if we have them
+    recomputeSummaryFromCheckpoints();
+
+    // 6) Cache the good stuff for snappy reloads
     try { localStorage.setItem('galaxy_compliance', JSON.stringify(state)); } catch {}
   }
 
@@ -122,7 +149,8 @@
     state.checkpoints.forEach(cp=>{
       const box = H('div','rounded border border-white/10 p-3 bg-white/5','');
       const row = H('div','d-flex align-items-center justify-content-between','');
-      const statusIcon = cp.status === 'pass' || cp.status === 'compliant' ? '✅' : (cp.status ? '⏳' : '');
+      const st = normalizeStatus(cp.status);
+      const statusIcon = st === 'compliant' ? '✅' : (st === 'pending' ? '⏳' : (st ? '⚠️' : ''));
       row.appendChild(H('div','fw-semibold', `${cp.title || '—'} ${statusIcon ? `<span class="ms-2">${statusIcon}</span>` : ''}`));
       const btn = cp.link
         ? H('a','btn btn-sm btn-light','View Details')
@@ -169,6 +197,33 @@
     if (c) c.textContent = String(s.compliant ?? 0);
     if (p) p.textContent = String(s.pending ?? 0);
     if (n) n.textContent = String(s.noncompliant ?? 0);
+
+    // Totals + percents
+    const total = (s.compliant||0) + (s.pending||0) + (s.noncompliant||0);
+    const pct   = total ? Math.round((s.compliant||0) * 100 / total) : 0;
+    const pctPending = total ? Math.round((s.pending||0) * 100 / total) : 0;
+    const pctNon     = total ? Math.round((s.noncompliant||0) * 100 / total) : 0;
+
+    // Donut ring
+    const path = $('#summary_donut_path');
+    const pctText = $('#summary_percent_text');
+    const totalText = $('#summary_total_text');
+    const CIRC = 2 * Math.PI * 64; // r=64 (matches HTML)
+    if (path){
+      const dash = (pct/100) * CIRC;
+      path.setAttribute('stroke-dasharray', `${dash} ${CIRC - dash}`);
+      // color shifts slightly based on compliance
+      const color = pct >= 75 ? '#22c55e' : (pct >= 40 ? '#f59e0b' : '#ef4444');
+      path.setAttribute('stroke', color);
+    }
+    if (pctText)   pctText.textContent = `${pct}%`;
+    if (totalText) totalText.textContent = `${s.compliant||0} of ${total}`;
+
+    // Mini-bars
+    const g = $('#bar_green'), a = $('#bar_amber'), r = $('#bar_red');
+    if (g) g.style.width = `${pct}%`;
+    if (a) a.style.width = `${pctPending}%`;
+    if (r) r.style.width = `${pctNon}%`;
   }
 
   function renderQuickActions(){
@@ -280,7 +335,11 @@
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async ()=>{
       await onSave();                              // copy inputs -> state
-      await persistPage('compliance', {            // NEW: push to /api/page
+
+      // After edits, recompute summary from checkpoints so numbers/visuals stay in sync
+      recomputeSummaryFromCheckpoints();
+
+      await persistPage('compliance', {            // push to /api/page
         summary: state.summary,
         quick_actions: state.quickActions,
         key_contacts: state.keyContacts,
@@ -302,7 +361,7 @@
     return {wrap, box};
   }
 
-  /* ----------------------- modal builders ----------------------- */
+  /* ----------------------- modals ----------------------- */
   function buildCheckpointsModal(){
     const {wrap, box} = section('Compliance Checkpoints');
     const list = H('div','d-flex flex-column gap-2','');
@@ -314,9 +373,9 @@
         <div class="col-lg-2">
           <select class="form-select">
             <option value="" ${!cp.status?'selected':''}>—</option>
-            <option value="compliant" ${cp.status==='compliant'?'selected':''}>Compliant</option>
-            <option value="pass" ${cp.status==='pass'?'selected':''}>Pass</option>
-            <option value="pending" ${cp.status==='pending'?'selected':''}>Pending</option>
+            <option value="compliant" ${normalizeStatus(cp.status)==='compliant'?'selected':''}>Compliant</option>
+            <option value="pending" ${normalizeStatus(cp.status)==='pending'?'selected':''}>Pending</option>
+            <option value="noncompliant" ${normalizeStatus(cp.status)==='noncompliant'?'selected':''}>Non-Compliant</option>
           </select>
         </div>
         <div class="col-lg-2"><input type="date" class="form-control" value="${cp.lastReviewed ? new Date(cp.lastReviewed).toISOString().slice(0,10) : ''}"></div>
