@@ -5,6 +5,7 @@ from rapidfuzz import fuzz, process
 import io, re, requests, os, json
 from dotenv import load_dotenv
 from openai import OpenAI
+import json, textwrap
 
 load_dotenv()
 
@@ -125,37 +126,25 @@ def extract_cv_data(cv_text: str) -> dict:
     schema_hint = {
         "profile": {
             "name": "",
+            "photo_url": "",
             "socials": {"LinkedIn": "", "Google Scholar": "", "X": ""},
             "research_areas": [],
             "positions": [],
             "education": [],
-            "memberships": []
+            "memberships": [],
+            "affiliations": [],
+            "awards": [{"year": "", "title": ""}],
+            "patents": [{"title": "", "number": "", "inventors": [], "filed": "", "status": ""}],
+            "media_mentions": [],
+            "mentors": [],
+            "colleagues": [],
+            "keywords": [],
+            "partners": {"Academic Partners": 0, "Industry Partners": 0}
         },
         "publications": {
             "publications": [
                 {"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}
             ]
-        },
-
-        # Projects is an OBJECT (not a list) with all tiles your UI renders
-        "projects": {
-            "project_snapshot": {
-                "status": "",
-                "days_remaining": 0,
-                "title": "",
-                "description": "",
-                "donut_percentage": 0,
-                "tags": [{"label": ""}]
-            },
-            "project_status": {
-                "counts": {"active": 0, "on_hold": 0, "stopped": 0},
-                "projects": [{"label": "", "status": "", "selected": False}]
-            },
-            "impact_points": {"total": "", "change": "", "note": ""},
-            "total_budget": {"amount": "", "change": "", "note": ""},
-            "next_deadline": {"label": "", "date": ""},
-            "messages": [{"name": "", "time_ago": "", "subject": ""}],
-            "latest_activity": [{"name": "", "action": "", "time_ago": "", "avatar": "", "approved": False}]
         },
 
         # Grants is an OBJECT with subkeys the Grants page needs
@@ -179,6 +168,27 @@ def extract_cv_data(cv_text: str) -> dict:
             "keywords": []
         },
 
+        # Projects is an OBJECT (not a list) with all tiles your UI renders
+        "projects": {
+            "project_snapshot": {
+                "status": "",
+                "days_remaining": 0,
+                "title": "",
+                "description": "",
+                "donut_percentage": 0,
+                "tags": [{"label": ""}]
+            },
+            "project_status": {
+                "counts": {"active": 0, "on_hold": 0, "stopped": 0},
+                "projects": [{"label": "", "status": "", "selected": False}]
+            },
+            "impact_points": {"total": "", "change": "", "note": ""},
+            "total_budget": {"amount": "", "change": "", "note": ""},
+            "next_deadline": {"label": "", "date": ""},
+            "messages": [{"name": "", "time_ago": "", "subject": ""}],
+            "latest_activity": [{"name": "", "action": "", "time_ago": "", "avatar": "", "approved": False}]
+        },
+
         # Compliance is an OBJECT with the cards your page renders
         "compliance": {
             "summary": {"compliant": 0, "pending": 0, "non_compliant": 0},
@@ -190,30 +200,52 @@ def extract_cv_data(cv_text: str) -> dict:
         }
     }
 
-    prompt = f"""
-You are a strict JSON generator for CV parsing.
-Return ONLY valid JSON. No commentary.
+    schema_hint_json = json.dumps(schema_hint, indent=2)
 
-Schema (use these exact keys; for missing values use empty strings/arrays/objects):
-{json.dumps(schema_hint)}
+    prompt_head = textwrap.dedent("""\
+    You are a strict JSON generator for CV parsing.
+    Return ONLY valid JSON. No commentary.
 
-Rules:
-- profile.name must be a single string (author's full name).
-- profile.research_areas must be an array of short topic strings.
-- profile.education must be an array of strings formatted as "Degree, Field, Institution, Year, GPA: X.X".
-- publications.publications is an array of items:
-  {{"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}}
-- Projects MUST be an object with keys shown above (not an array).
-- Grants MUST include 'grants' array and the sub-objects ('reports','breakdown','keywords').
-  * Normalize amounts to digits-only numbers when possible.
-  * awardedAt should be YYYY-MM-DD if present, else "".
-- Compliance MUST include summary/quick_actions/key_contacts/checkpoints/audits/notes.
-- Do not invent items; if not in CV, leave empty arrays/zeros/empty strings.
-- Titles and names should be as they appear in the CV.
+    Schema (use these exact keys; for missing values use empty strings/arrays/objects):
+    """)
 
-CV TEXT (truncate to 15k chars):
-{cv_text[:15000]}
-"""
+    prompt_rules = textwrap.dedent("""\
+    Rules:
+    - profile.name must be a single string (author's full name).
+    - profile.research_areas must be an array of short topic strings.
+    - profile.education must be an array of strings formatted as "Degree, Field, Institution, Year, GPA: X.X".
+    Profile field hints:
+    - affiliations: organizations/institutes you are affiliated with (current or past). Prefer university, institute, hospital and lab names.
+    - memberships: professional associations, societies, committees (list of plain strings).
+    - awards: list of {"year","title"}; keep year if present; title short and clean.
+    - patents: list of {"title","number","inventors","filed","status"} if present (empty string/array if unknown).
+    - media_mentions: news or press items (short strings).
+    - mentors/colleagues: if a Mentors/Advisors/Supervisors/Collaborators section exists, use the names (strings).
+    - partners: if counts appear in CV, set them; else {"Academic Partners":0,"Industry Partners":0}.
+
+    - publications.publications is an array of items:
+    {"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}
+    - Projects MUST be an object with keys shown above (not an array).
+    - Grants MUST include 'grants' array and the sub-objects ('reports','breakdown','keywords').
+    * Normalize amounts to digits-only numbers when possible.
+    * awardedAt should be YYYY-MM-DD if present, else "".
+    - Compliance MUST include summary/quick_actions/key_contacts/checkpoints/audits/notes.
+    - Do not invent items; if not in CV, leave empty arrays/zeros/empty strings.
+    - Titles and names should be as they appear in the CV.
+    - If the CV has a combined "Grants & Awards" section, put MONEY/FUNDING items in "grants" and non-monetary honors/prizes in "profile.awards".
+
+    Now extract:
+    """)
+
+    prompt = (
+        prompt_head
+        + schema_hint_json
+        + "\n"
+        + prompt_rules
+        + "\nCV TEXT (truncate to 15k chars):\n"
+        + (cv_text[:15000] if cv_text else "")
+    )
+
     try:
         completion = client.chat.completions.create(
             model=GPT_MODEL,
@@ -242,7 +274,155 @@ CV TEXT (truncate to 15k chars):
         prof.setdefault("positions", [])
         prof.setdefault("education", [])
         prof.setdefault("memberships", [])
+        prof.setdefault("affiliations", [])
+        prof.setdefault("awards", [])
+        prof.setdefault("patents", [])
+        prof.setdefault("media_mentions", [])
+        prof.setdefault("mentors", [])
+        prof.setdefault("colleagues", [])
+        prof.setdefault("keywords", [])
+        prof.setdefault("partners", {"Academic Partners": 0, "Industry Partners": 0})
         parsed["profile"] = prof
+
+        # --- simple section scrapers (fallbacks if LLM misses) ---
+        def _section_lines(txt: str, headers: list[str]) -> list[str]:
+            lines = [ln.rstrip() for ln in (txt or "").splitlines()]
+            picks, grab = [], False
+            hdr = re.compile(rf"^\s*(?:{'|'.join(re.escape(h) for h in headers)})\s*$", re.I)
+            next_hdr = re.compile(r"^[A-Z][A-Z\s/&-]{3,}$")  # naive "BIG HEADER" detector
+            for ln in lines:
+                if hdr.match(ln): grab = True; continue
+                if grab and next_hdr.match(ln): break
+                if grab and ln.strip(): picks.append(ln.strip())
+            return picks
+
+        def _parse_awards(lines: list[str]) -> list[dict]:
+            out=[]
+            for ln in lines:
+                # try: YYYY – Title
+                m = re.match(r"(\d{4})\s*[–-]\s*(.+)$", ln)
+                if m: out.append({"year": m.group(1), "title": m.group(2).strip()})
+                else: out.append({"year":"", "title": ln})
+            return out
+
+        def _parse_patents(lines: list[str]) -> list[dict]:
+            out=[]
+            for ln in lines:
+                num = re.search(r"\b(?:US|WO|EP)?\s?\d[\d,.-/ ]+\b", ln)
+                filed = re.search(r"(?:filed|appl(?:ication)?)[: ]+([A-Za-z0-9 ,/-]+)", ln, re.I)
+                status = re.search(r"(granted|pending|issued)", ln, re.I)
+                inventors = re.search(r"(?:inventors?|authors?)[: ]+(.+)", ln, re.I)
+                title = re.sub(r"\(.*?\)", "", ln)  # strip parens junk
+                out.append({
+                    "title": title.strip(),
+                    "number": (num.group(0) if num else "").strip(),
+                    "inventors": [x.strip() for x in (inventors.group(1).split(","))] if inventors else [],
+                    "filed": (filed.group(1) if filed else "").strip(),
+                    "status": (status.group(1).title() if status else "")
+                })
+            return out
+        
+        def _looks_like_grant(text: str) -> bool:
+            if not text: return False
+            # currency / grant keywords / common agencies
+            return bool(re.search(
+                r'(\$|usd|cad|\bgrant\b|\bfunding\b|\bfund\b|\bpi\b|'
+                r'\bnsf\b|\bns(?:e)?rc\b|\bcihr\b|\bnih\b|\bmitacs\b|\bssh?rc\b)',
+                text, re.I))
+
+        def _parse_grants(lines: list[str]) -> list[dict]:
+            out=[]
+            for ln in lines:
+                s = ln.strip()
+
+                # amount
+                amt = 0
+                m_amt = re.search(r'(\$|usd|cad)\s*([\d,]+(?:\.\d{1,2})?)', s, re.I)
+                if not m_amt:
+                    m_amt = re.search(r'\b([\d,]{4,})(?:\.\d{1,2})?\b', s)  # bare number like 25,000
+                if m_amt:
+                    num = re.sub(r'[^\d]', '', m_amt.group(2) if m_amt.lastindex and m_amt.lastindex >= 2 else m_amt.group(1))
+                    try: amt = int(num)
+                    except: amt = 0
+
+                # year/date
+                awardedAt = ""
+                m_yr = re.search(r'\b(20\d{2}|19\d{2})\b', s)
+                if m_yr: awardedAt = m_yr.group(1)
+
+                # agency heuristic
+                agency = ""
+                m_ag = re.search(r'(?:from|by|with)\s+([^,–\-•]+)', s, re.I)
+                if m_ag: agency = m_ag.group(1).strip()
+
+                out.append({
+                    "id": "",
+                    "title": s,
+                    "agency": agency,
+                    "type": "",
+                    "duration": "",
+                    "amountAwarded": amt,
+                    "amountReceived": 0,
+                    "amountSpent": 0,
+                    "awardedAt": awardedAt,
+                    "tags": []
+                })
+            return out
+
+        def _unique(seq: list[str]) -> list[str]:
+            seen=set(); out=[]
+            for s in seq:
+                k = s.lower().strip()
+                if k and k not in seen: seen.add(k); out.append(s.strip())
+            return out
+
+        # --- Fallbacks when the LLM misses sections entirely ---
+
+        # 1) Split combined "GRANTS & AWARDS" / "FUNDING" blocks
+        grants_block = _section_lines(cv_text, [
+            "GRANTS", "FUNDING", "GRANTS & AWARDS", "AWARDS & GRANTS",
+            "GRANTS AND AWARDS", "AWARDS AND GRANTS", "SCHOLARSHIPS"
+        ])
+        grantish = [ln for ln in grants_block if _looks_like_grant(ln)]
+        awardish = [ln for ln in grants_block if ln not in grantish]
+
+        # 2) Pure awards blocks
+        awards_block = _section_lines(cv_text, ["AWARDS", "HONOURS", "HONORS"])
+
+        # 3) Fill grants (object) if empty
+        gr = parsed["grants"]
+        if not gr.get("grants") and grantish:
+            gr["grants"] = _parse_grants(grantish)[:20]
+
+        # 4) Fill awards (profile) if empty — combine true awards + the awardish half
+        if not prof["awards"]:
+            combined_awards = (awards_block + awardish)[:20]
+            prof["awards"] = _parse_awards(combined_awards) if combined_awards else []
+
+        # 5) Safety net: move any grant-like awards into grants
+        if prof["awards"]:
+            keep_awards, move_to_grants = [], []
+            for a in prof["awards"]:
+                title = (a.get("title") or "")
+                if _looks_like_grant(title):
+                    move_to_grants.append(title)
+                else:
+                    keep_awards.append(a)
+            prof["awards"] = keep_awards
+            if move_to_grants:
+                gr.setdefault("grants", [])
+                gr["grants"].extend(_parse_grants(move_to_grants))
+
+        # affiliations: collect from dedicated section + institutions seen elsewhere
+        if not prof["affiliations"]:
+            aff_lines = _section_lines(cv_text, ["AFFILIATIONS","APPOINTMENTS","AFFILIATIONS & APPOINTMENTS"])
+            # also pick institutions from education & positions if present
+            edu_insts = []
+            for e in prof.get("education", []):
+                m = re.search(r"(?:University|Institute|Hospital|College|UHN|UofT|Toronto Rehabilitation|Queen’s)", str(e), re.I)
+                if m: edu_insts.append(str(e))
+            pos_insts = [s for s in prof.get("positions", []) if re.search(r" at |, ", s)]
+            prof["affiliations"] = _unique(aff_lines + edu_insts + pos_insts)[:12]
 
         # Publications defaults
         pubs = parsed.get("publications") or {}

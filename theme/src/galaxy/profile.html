@@ -300,13 +300,19 @@
 											</ul>
 											<!--end::Breadcrumb-->
 											<!--begin::Title-->
-											<h1 class="page-heading d-flex flex-column justify-content-center text-dark fw-bolder fs-1 lh-0">Dashboard</h1>
+											<h1 class="page-heading d-flex flex-column justify-content-center text-dark fw-bolder fs-1 lh-0">Profile</h1>
 											<!--end::Title-->
 										</div>
 										<!--end::Page title-->
 										<!--begin::Actions-->
 										<div class="d-flex align-items-center ms-auto gap-3">
-											<button id="importCvBtn" class="btn btn-primary btn-sm d-none">Import CV/Socials</button>
+											<button id="importCvBtn" class="btn btn-primary btn-sm d-none">
+												<i class="ki-duotone ki-cloud-download fs-3">
+													<span class="path1"></span>
+													<span class="path2"></span>
+												</i>
+												Import CV/Socials
+											</button>
 											<button id="editToggle" class="btn btn-sm btn-success px-4 py-3">Edit</button>
 										</div>
 										<!--end::Actions-->
@@ -322,20 +328,114 @@
 								<!--begin::Content container-->
 								<div id="kt_app_content_container" class="app-container container-fluid">
 
-								<!-- 3D-ish card styling just for these boxes -->
+								<!-- Enhanced card styling without colors and no 3D lift -->
 								<style>
 								.card-3d{
-									border:1px solid rgba(255,255,255,.08);
-									background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+									border:1px solid rgba(255,255,255,.12);
+									background:linear-gradient(135deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,.03) 100%);
 									box-shadow:
-									0 10px 20px rgba(0,0,0,.25),
-									inset 0 1px 0 rgba(255,255,255,.06);
-									border-radius:16px;
-									transition:transform .15s ease, box-shadow .15s ease;
+										0 8px 32px rgba(0,0,0,.18),
+										0 2px 8px rgba(0,0,0,.12),
+										inset 0 1px 0 rgba(255,255,255,.1),
+										inset 0 -1px 0 rgba(0,0,0,.1);
+									border-radius:20px;
+									transition:all .3s cubic-bezier(0.4, 0, 0.2, 1);
+									position: relative;
+									overflow: hidden;
 								}
-								.card-3d:hover{ transform:translateY(-3px); box-shadow:0 14px 26px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.08); }
-								.card-3d .card-header{ border-bottom:1px solid rgba(255,255,255,.07); }
-								.pill{ display:inline-block; padding:.35rem .6rem; border-radius:999px; background:rgba(255,255,255,.08); }
+								
+								.card-3d:hover{ 
+									box-shadow:
+										0 12px 40px rgba(0,0,0,.22),
+										0 4px 12px rgba(0,0,0,.15),
+										inset 0 1px 0 rgba(255,255,255,.15);
+									border-color: rgba(255,255,255,.18);
+								}
+								
+								.card-3d .card-header{ 
+									border-bottom:1px solid rgba(255,255,255,.1); 
+									background: rgba(255,255,255,.03);
+									padding: 1.5rem 1.75rem;
+								}
+								
+								.card-3d .card-header h3 {
+									font-size: 1.1rem;
+									letter-spacing: 0.02em;
+								}
+								
+								.card-3d .card-body {
+									padding: 1.75rem;
+								}
+								
+								.pill{ 
+									display:inline-block; 
+									padding:.4rem .75rem; 
+									border-radius:999px; 
+									background:rgba(255,255,255,.1);
+									border: 1px solid rgba(255,255,255,.15);
+									font-size: .875rem;
+									font-weight: 500;
+									transition: all .2s ease;
+								}
+								
+								.pill:hover {
+									background:rgba(255,255,255,.15);
+									transform: translateY(-1px);
+									box-shadow: 0 4px 12px rgba(0,0,0,.15);
+								}
+								
+								/* Icon enhancements */
+								.card-3d .card-header .card-title::before {
+									content: '';
+									display: inline-block;
+									width: 4px;
+									height: 20px;
+									background: rgba(255,255,255,.3);
+									margin-right: 12px;
+									border-radius: 2px;
+									vertical-align: middle;
+								}
+								
+								/* List styling */
+								.card-3d ul li {
+									padding: 0.5rem 0;
+									border-bottom: 1px dashed rgba(255,255,255,.05);
+									transition: all .2s ease;
+								}
+								
+								.card-3d ul li:last-child {
+									border-bottom: none;
+								}
+								
+								.card-3d ul li:hover {
+									padding-left: 8px;
+									opacity: 0.8;
+								}
+								
+								/* Section dividers - removed underline */
+								.fw-semibold.mb-2 {
+									padding-bottom: 8px;
+									margin-bottom: 16px !important;
+								}
+								
+								/* Subtle glow on hover */
+								.card-3d::after {
+									content: '';
+									position: absolute;
+									top: 50%;
+									left: 50%;
+									width: 300px;
+									height: 300px;
+									background: radial-gradient(circle, rgba(255,255,255,.05) 0%, transparent 70%);
+									transform: translate(-50%, -50%);
+									opacity: 0;
+									transition: opacity .3s ease;
+									pointer-events: none;
+								}
+								
+								.card-3d:hover::after {
+									opacity: 1;
+								}
 								</style>
 
 								<!-- ===== GRID (matches your TSX layout) ===== -->

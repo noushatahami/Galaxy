@@ -418,6 +418,8 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
     stored   = STORE[cv_id]
     parsed   = stored.get("parsed") or {}
     profile  = stored.get("profile") or {}
+    affs = profile.get("affiliations") or []
+    cv_affiliation = ", ".join(a for a in affs if a) if isinstance(affs, list) else (affs or "")
     name     = (profile.get("name") or "").strip()
     cv_text  = stored.get("text") or ""
 
@@ -430,9 +432,6 @@ async def publications_aggregate(cv_id: Optional[str] = Form(None)):
         ]
     except Exception:
         cv_titles_struct = []
-
-    # Optional affiliation string to help tie-break
-    cv_affiliation = (profile.get("affiliation") or profile.get("institution") or "").strip()
 
     # Try cached author first
     author_id = stored.get("pub_author_id")
