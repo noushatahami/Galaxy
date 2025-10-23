@@ -498,7 +498,9 @@ def work_main_title(w: dict) -> str:
 
 def work_doi(w: dict) -> Optional[str]:
     doi = (w.get("ids") or {}).get("doi") or ""
-    return doi.lower() if doi else None
+    if doi and not url:
+        url = f"https://doi.org/{doi}"
+
 
 def author_affiliation_str(author_obj: dict) -> str:
     """Join institution/display names OpenAlex provides for the author."""
