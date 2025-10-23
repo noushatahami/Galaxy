@@ -593,6 +593,16 @@
         if (Array.isArray(p.positions))       state.profile.positions      = p.positions;
         if (Array.isArray(p.education))       state.profile.education      = p.education;
         if (Array.isArray(p.memberships))     state.profile.memberships    = p.memberships;
+        if (Array.isArray(p.awards))         state.profile.awards         = p.awards;
+        if (Array.isArray(p.patents))        state.profile.patents        = p.patents;
+        if (Array.isArray(p.affiliations))   state.profile.affiliations   = p.affiliations;
+        if (Array.isArray(p.media_mentions)) state.profile.media_mentions = p.media_mentions;
+        if (Array.isArray(p.mentors))        state.profile.mentors        = p.mentors;
+        if (Array.isArray(p.colleagues))     state.profile.colleagues     = p.colleagues;
+        if (Array.isArray(p.keywords))       state.profile.keywords       = p.keywords;
+        if (p.partners && typeof p.partners === 'object') {
+          state.profile.partners = p.partners;
+        }
 
         // Persist & paint now
         localStorage.setItem('galaxy_profile', JSON.stringify(state.profile));
