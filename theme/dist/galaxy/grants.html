@@ -533,10 +533,10 @@
 
 								<!-- RIGHT column (xl:4) -->
 								<div class="col-xl-4">
-									<!-- Grants Breakdown Chart -->
+									<!-- Budget Usage (compliance-style) -->
 									<div class="card card-3d mb-6">
 										<div class="card-header align-items-center">
-											<h3 class="card-title fw-bold m-0">Breakdown</h3>
+											<h3 class="card-title fw-bold m-0">Budget Usage</h3>
 										</div>
 										<div class="card-body">
 											<div class="d-flex flex-column align-items-center gap-4">
@@ -854,7 +854,7 @@
 				}
 				
 				saveGrantsData();
-				updateDashboard();
+				updateDashboard(); // ✅ NOW TRIGGERS CHART UPDATE
 			};
 
 			input.addEventListener('blur', saveEdit);
@@ -873,7 +873,7 @@
 			grantsData.splice(index, 1);
 			saveGrantsData();
 			renderGrantsTable(grantsData);
-			updateDashboard();
+			updateDashboard(); // ✅ NOW TRIGGERS CHART UPDATE
 		}
 
 		/* ===== Save to localStorage ===== */
@@ -889,7 +889,7 @@
 			if($('total_grants_awarded')) $('total_grants_awarded').textContent = fmtMoney(t.awarded);
 			if($('available_budget')) $('available_budget').textContent = fmtMoney(t.available);
 
-			updateGrantsSummary(t);
+			updateGrantsSummary(t); // ✅ CALLS CHART UPDATE
 		}
 
 		/* ===== Update Grants Summary - COMPLIANCE STYLE (spent vs received) ===== */
@@ -908,6 +908,7 @@
 				const circumference = 402; // 2 * π * 64
 				const filled = (percent / 100) * circumference;
 				
+				// ✅ ANIMATE DONUT UPDATE
 				donutPath.setAttribute('stroke-dasharray', `${filled} ${circumference}`);
 				percentText.textContent = `${percent}%`;
 				
@@ -921,22 +922,23 @@
 				}
 			}
 			
-			// Update text values
+			// ✅ UPDATE TEXT VALUES
 			if($('summary_awarded')) $('summary_awarded').textContent = fmtMoneyShort(awarded);
 			if($('summary_received')) $('summary_received').textContent = fmtMoneyShort(received);
 			if($('summary_spent')) $('summary_spent').textContent = fmtMoneyShort(spent);
 			
-			// Update bars - showing proportions of total budget pool
+			// ✅ ANIMATE BARS UPDATE
 			const barBlue = $('bar_blue');
 			const barYellow = $('bar_yellow');
 			const barRed = $('bar_red');
 			
 			if(barBlue && barYellow && barRed && total > 0){
+				// Small delay for smooth animation
 				setTimeout(()=>{
 					barBlue.style.width = `${(awarded / total) * 100}%`;
 					barYellow.style.width = `${(received / total) * 100}%`;
 					barRed.style.width = `${(spent / total) * 100}%`;
-				}, 100);
+				}, 50);
 			}
 		}
 
@@ -952,7 +954,7 @@
 		async function init(){
 			grantsData = await loadGrants();
 			renderGrantsTable(grantsData);
-			updateDashboard();
+			updateDashboard(); // ✅ INITIAL CHART RENDER
 		}
 
 		init();
