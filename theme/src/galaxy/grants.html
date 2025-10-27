@@ -387,12 +387,80 @@
 									opacity: 1;
 								}
 
-								.legend-item{ display:flex; align-items:center; justify-content:space-between; padding:.35rem .5rem; border:1px dashed rgba(255,255,255,.08); border-radius:10px; }
-								.legend-item + .legend-item{ margin-top:.5rem; }
-								.legend-dot{ width:10px; height:10px; border-radius:50%; margin-right:.5rem; display:inline-block; }
-								.legend-left{ display:flex; align-items:center; gap:.5rem; }
-								.legend-right{ opacity:.75; font-size:.9em; }
-								#grants_donut svg text{ font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; }
+								/* ===== COMPLIANCE-STYLE BREAKDOWN ===== */
+								.donut-wrap {
+									position: relative;
+									width: 160px;
+									height: 160px;
+									margin: 0 auto;
+								}
+
+								.donut {
+									transform: rotate(-90deg);
+								}
+
+								.donut circle.track {
+									stroke: rgba(255,255,255,.12);
+								}
+
+								.donut circle.meter {
+									stroke-linecap: round;
+									transition: stroke-dasharray .6s ease;
+								}
+
+								.donut-center {
+									position: absolute;
+									inset: 0;
+									display: flex;
+									align-items: center;
+									justify-content: center;
+									flex-direction: column;
+								}
+
+								.donut-center .big {
+									font-size: 1.5rem;
+									font-weight: 800;
+									line-height: 1;
+								}
+
+								.donut-center .small {
+									font-size: .7rem;
+									opacity: .8;
+									margin-top: 4px;
+								}
+
+								.mini-bar {
+									height: 8px;
+									border-radius: 999px;
+									background: rgba(255,255,255,.12);
+									overflow: hidden;
+								}
+
+								.mini-bar>span {
+									display: block;
+									height: 100%;
+									width: 0%;
+									transition: width .6s ease;
+									border-radius: 999px;
+								}
+
+								.bar-blue>span {
+									background: hsl(210 85% 60%);
+								}
+
+								.bar-yellow>span {
+									background: hsl(50 85% 60%);
+								}
+
+								.bar-red>span {
+									background: hsl(10 85% 60%);
+								}
+
+								.summary-bars{
+									max-width: 360px;
+									width: 100%;
+									margin: 0 auto;
+								}
 								
 								/* Editable cells */
 								.editable-cell { cursor: pointer; position: relative; }
@@ -465,15 +533,51 @@
 
 								<!-- RIGHT column (xl:4) -->
 								<div class="col-xl-4">
-									<!-- Breakdown -->
+									<!-- Grants Breakdown Chart -->
 									<div class="card card-3d mb-6">
-									<div class="card-header"><h3 class="card-title fw-bold m-0">Breakdown</h3></div>
-									<div class="card-body">
-										<div id="grants_donut_wrap" class="d-flex flex-column align-items-center">
-										<div id="grants_donut" class="w-100" style="max-width:360px; aspect-ratio:1 / 1;"></div>
-										<ul id="grants_donut_legend" class="list-unstyled mt-4 w-100" style="max-width:420px;"></ul>
+										<div class="card-header align-items-center">
+											<h3 class="card-title fw-bold m-0">Breakdown</h3>
 										</div>
-									</div>
+										<div class="card-body">
+											<div class="d-flex flex-column align-items-center gap-4">
+												<!-- Donut -->
+												<div class="donut-wrap">
+													<svg class="donut" width="160" height="160" viewBox="0 0 160 160">
+														<circle class="track" cx="80" cy="80" r="64" 
+																fill="transparent" stroke-width="16"></circle>
+														<circle id="summary_donut_path" class="meter" cx="80" cy="80" r="64"
+																fill="transparent" stroke-width="16" 
+																stroke="#22c55e" 
+																stroke-dasharray="0 402"></circle>
+													</svg>
+													<div class="donut-center">
+														<div id="summary_percent_text" class="big">0%</div>
+														<div id="summary_total_text" class="small">Spent</div>
+													</div>
+												</div>
+
+												<!-- Bars under donut -->
+												<div class="summary-bars w-100 d-flex flex-column align-items-stretch">
+													<div class="d-flex align-items-center justify-content-between">
+														<div class="text-gray fs-8">Awarded</div>
+														<div class="fs-6 fw-bold" id="summary_awarded">$0</div>
+													</div>
+													<div class="mini-bar bar-blue mb-3"><span id="bar_blue"></span></div>
+
+													<div class="d-flex align-items-center justify-content-between">
+														<div class="text-gray fs-8">Received</div>
+														<div class="fs-6 fw-bold" id="summary_received">$0</div>
+													</div>
+													<div class="mini-bar bar-yellow mb-3"><span id="bar_yellow"></span></div>
+
+													<div class="d-flex align-items-center justify-content-between">
+														<div class="text-gray fs-8">Spent</div>
+														<div class="fs-6 fw-bold" id="summary_spent">$0</div>
+													</div>
+													<div class="mini-bar bar-red"><span id="bar_red"></span></div>
+												</div>
+											</div>
+										</div>
 									</div>
 
 									<!-- Reports -->
@@ -785,7 +889,55 @@
 			if($('total_grants_awarded')) $('total_grants_awarded').textContent = fmtMoney(t.awarded);
 			if($('available_budget')) $('available_budget').textContent = fmtMoney(t.available);
 
-			initDonut();
+			updateGrantsSummary(t);
+		}
+
+		/* ===== Update Grants Summary - COMPLIANCE STYLE (spent vs received) ===== */
+		function updateGrantsSummary(totals){
+			const { awarded, received, spent } = totals;
+			const total = awarded + received + spent;
+			
+			// Update donut - shows SPENT proportion of RECEIVED
+			const donutPath = $('summary_donut_path');
+			const percentText = $('summary_percent_text');
+			const totalText = $('summary_total_text');
+			
+			if(donutPath && percentText && totalText){
+				// Calculate percentage: spent / received
+				const percent = received > 0 ? Math.min(100, Math.round((spent / received) * 100)) : 0;
+				const circumference = 402; // 2 * π * 64
+				const filled = (percent / 100) * circumference;
+				
+				donutPath.setAttribute('stroke-dasharray', `${filled} ${circumference}`);
+				percentText.textContent = `${percent}%`;
+				
+				// Color the donut based on spending level
+				if(percent >= 90) {
+					donutPath.setAttribute('stroke', '#ef4444'); // Red - overspending/high usage
+				} else if(percent >= 70) {
+					donutPath.setAttribute('stroke', '#f59e0b'); // Amber - getting high
+				} else {
+					donutPath.setAttribute('stroke', '#22c55e'); // Green - healthy
+				}
+			}
+			
+			// Update text values
+			if($('summary_awarded')) $('summary_awarded').textContent = fmtMoneyShort(awarded);
+			if($('summary_received')) $('summary_received').textContent = fmtMoneyShort(received);
+			if($('summary_spent')) $('summary_spent').textContent = fmtMoneyShort(spent);
+			
+			// Update bars - showing proportions of total budget pool
+			const barBlue = $('bar_blue');
+			const barYellow = $('bar_yellow');
+			const barRed = $('bar_red');
+			
+			if(barBlue && barYellow && barRed && total > 0){
+				setTimeout(()=>{
+					barBlue.style.width = `${(awarded / total) * 100}%`;
+					barYellow.style.width = `${(received / total) * 100}%`;
+					barRed.style.width = `${(spent / total) * 100}%`;
+				}, 100);
+			}
 		}
 
 		/* ===== Edit Toggle ===== */
@@ -804,112 +956,6 @@
 		}
 
 		init();
-
-		/* ========= Donut Chart ========= */
-		function renderDonut(container, segments, options={}){
-			const wrap = container;
-			wrap.innerHTML = '';
-			const size = Math.min(wrap.clientWidth || 320, wrap.clientHeight || wrap.clientWidth || 320);
-			const W = size, H = size, cx = W/2, cy = H/2;
-			const strokeW = options.strokeWidth ?? Math.round(W * 0.16);
-			const r = Math.round((Math.min(W,H) - strokeW) / 2);
-
-			const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-			svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-			svg.setAttribute('width', '100%');
-			svg.setAttribute('height','100%');
-
-			const bg = document.createElementNS(svg.namespaceURI,'circle');
-			bg.setAttribute('cx', cx); bg.setAttribute('cy', cy); bg.setAttribute('r', r);
-			bg.setAttribute('fill','none'); bg.setAttribute('stroke','rgba(255,255,255,.08)'); bg.setAttribute('stroke-width', strokeW);
-			svg.appendChild(bg);
-
-			const total = segments.reduce((a,s)=>a + s.value, 0) || 1;
-			let startAngle = -90;
-
-			segments.forEach(seg=>{
-				const angle = (seg.value / total) * 360;
-				const endAngle = startAngle + angle;
-				const largeArc = angle > 180 ? 1 : 0;
-				const a0 = (Math.PI/180) * startAngle;
-				const a1 = (Math.PI/180) * endAngle;
-				const x0 = cx + r * Math.cos(a0);
-				const y0 = cy + r * Math.sin(a0);
-				const x1 = cx + r * Math.cos(a1);
-				const y1 = cy + r * Math.sin(a1);
-
-				const path = document.createElementNS(svg.namespaceURI,'path');
-				path.setAttribute('d', `M ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1}`);
-				path.setAttribute('fill','none');
-				path.setAttribute('stroke', seg.color);
-				path.setAttribute('stroke-linecap','round');
-				path.setAttribute('stroke-width', strokeW);
-				path.setAttribute('opacity','0.95');
-				svg.appendChild(path);
-
-				startAngle = endAngle;
-			});
-
-			const centerValue = options.centerValue ?? total;
-			const centerLabel = options.centerLabel ?? 'Total';
-			
-			const main = document.createElementNS(svg.namespaceURI,'text');
-			main.setAttribute('x', cx); main.setAttribute('y', cy - 4);
-			main.setAttribute('text-anchor','middle'); main.setAttribute('dominant-baseline','middle');
-			main.setAttribute('font-size', Math.round(W*0.12)); main.setAttribute('font-weight','800');
-			main.textContent = fmtMoneyShort(centerValue);
-			svg.appendChild(main);
-
-			const sub = document.createElementNS(svg.namespaceURI,'text');
-			sub.setAttribute('x', cx); sub.setAttribute('y', cy + W*0.10);
-			sub.setAttribute('text-anchor','middle'); sub.setAttribute('font-size', Math.round(W*0.04));
-			sub.setAttribute('fill','rgba(255,255,255,.7)');
-			sub.textContent = centerLabel;
-			svg.appendChild(sub);
-
-			wrap.appendChild(svg);
-		}
-
-		function renderLegend(container, segments){
-			const total = segments.reduce((a,s)=>a+s.value, 0) || 1;
-			container.innerHTML = segments.map(s=>{
-				const pct = Math.round((s.value / total)*100);
-				return `<li class="legend-item">
-				<div class="legend-left"><span class="legend-dot" style="background:${s.color}"></span><span>${s.label}</span></div>
-				<div class="legend-right">${fmtMoneyShort(s.value)} · ${pct}%</div>
-				</li>`;
-			}).join('');
-		}
-
-		async function initDonut(){
-			const donutBox = $('grants_donut');
-			const legend   = $('grants_donut_legend');
-			if(!donutBox || !legend) return;
-
-			const t = computeTotals(grantsData);
-			
-			// Create segments showing Awarded, Received, and Spent
-			// Each is a separate bar showing the total amounts
-			const segments = [
-				{ key:'awarded',   label:'Awarded',   value:t.awarded,   color:'hsl(210 85% 60%)' },  // Blue
-				{ key:'received',  label:'Received',  value:t.received,  color:'hsl(50 85% 60%)'  },  // Yellow
-				{ key:'spent',     label:'Spent',     value:t.spent,     color:'hsl(10 85% 60%)'  }   // Red
-			];
-
-			// Filter out zero values
-			const activeSegments = segments.filter(s => s.value > 0);
-
-			// Calculate total for the center display
-			const totalValue = t.awarded + t.received + t.spent;
-
-			renderDonut(donutBox, activeSegments, { centerLabel: 'Total Value', centerValue: totalValue });
-			renderLegend(legend, activeSegments);
-
-			const ro = new ResizeObserver(()=>renderDonut(donutBox, activeSegments, { centerLabel: 'Total Value', centerValue: totalValue }));
-			ro.observe(donutBox);
-			}
-
-		window.addEventListener('galaxy:grants:updated', initDonut);
 		</script>
 		</body>
 		</html>
