@@ -4,7 +4,8 @@
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
   const H  = (t, c='', inner='') => { const n=document.createElement(t); if(c)n.className=c; if(inner!=null)n.innerHTML=inner; return n; };
   const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
-  // DEV/PROD API base (treat localhost, 127.0.0.1, 0.0.0.0 as local)
+  
+  // DEV/PROD API base
   const API = (['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname))
     ? 'http://127.0.0.1:3001/api'
     : '/api';
@@ -13,21 +14,45 @@
     ? '—'
     : Number(n).toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 })
   );
+  
+  const fmtMoneyShort = (n) => {
+    n = Number(n)||0; 
+    const a = Math.abs(n);
+    if (a >= 1e9) return `$${(n/1e9).toFixed(1)}B`;
+    if (a >= 1e6) return `$${(n/1e6).toFixed(1)}M`;
+    if (a >= 1e3) return `$${(n/1e3).toFixed(1)}k`;
+    return `$${n.toFixed(0)}`;
+  };
+  
   const sum = (arr) => arr.reduce((a,b)=>a+(Number(b)||0),0);
+
+  function nz(x){
+    if (typeof x === 'string') x = x.replace(/[$,]/g,'');
+    const n = Number(x);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function amountAwarded(g){ return nz(g.amountAwarded ?? g.amount_awarded ?? g.awarded ?? g.amount ?? g.total_amount ?? g.value ?? g.budget?.total); }
+  function amountReceived(g){ return nz(g.amountReceived ?? g.amount_received ?? g.received ?? g.budget?.received); }
+  function amountSpent(g){ return nz(g.amountSpent ?? g.amount_spent ?? g.spent ?? g.budget?.spent); }
 
   /* ----------------------- state ----------------------- */
   let editMode = false;
   const state = {
-    grants: [],             // [{id,title,agency,type,duration,amountAwarded,amountReceived,amountSpent,tags[],awardedAt}]
+    grants: [],
     totals: { totalAwarded: 0, availableBudget: 0 },
-    lastAwarded: null,      // grant object
-    breakdown: { categories: [], total: 0 }, // {label,value}[]
+    lastAwarded: null,
+    breakdown: { categories: [], total: 0 },
     reports: { grantId: '', nextDue: '', lastSubmitted: '' },
-    keywords: []            // [string]
+    keywords: []
   };
 
   /* ----------------------- persistence ----------------------- */
-  function save() { localStorage.setItem('galaxy_grants', JSON.stringify(state)); }
+  function save() { 
+    localStorage.setItem('galaxy_grants', JSON.stringify(state)); 
+    console.log('✅ Saved to localStorage');
+  }
+  
   async function persistPage(page, data){
     try{
       await fetch(`${API}/page`, {
@@ -41,13 +66,13 @@
   async function load() {
     const hasCV = !!localStorage.getItem('galaxy_cv_id');
 
-    // 1) Soft-load local cache (no early return)
+    // 1) Soft-load local cache
     const local = localStorage.getItem('galaxy_grants');
     if (local && !hasCV) {
       try { Object.assign(state, JSON.parse(local)); } catch {}
     }
 
-    // 2) Prefer API (CV-backed). Any successful fetch overrides cache/state.
+    // 2) Prefer API
     try {
       const [gr, sm, br, rp, kw] = await Promise.allSettled([
         fetch(`${API}/grants`),
@@ -114,22 +139,78 @@
 
   /* ----------------------- derivations ----------------------- */
   function deriveTotals() {
-    const totalAwarded  = sum(state.grants.map(g=>g.amountAwarded||g.amount||0));
-    const totalReceived = sum(state.grants.map(g=>g.amountReceived||0));
-    const totalSpent    = sum(state.grants.map(g=>g.amountSpent||0));
+    const totalAwarded  = sum(state.grants.map(g=>amountAwarded(g)));
+    const totalReceived = sum(state.grants.map(g=>amountReceived(g)));
+    const totalSpent    = sum(state.grants.map(g=>amountSpent(g)));
     const availableBudget = Math.max(totalReceived - totalSpent, 0);
     state.totals = { totalAwarded, availableBudget };
   }
+  
   function deriveLastAwarded() {
     if (!state.grants?.length) { state.lastAwarded = null; return; }
     state.lastAwarded = [...state.grants].sort((a,b) =>
       new Date(b.awardedAt||0) - new Date(a.awardedAt||0)
     )[0];
   }
+  
   function deriveKeywords() {
     const set = new Set();
     (state.grants||[]).forEach(g => (g.tags||g.keywords||[]).forEach(t => set.add(t)));
     state.keywords = [...set].slice(0, 30);
+  }
+
+  /* ----------------------- NEW: Compliance-Style Chart ----------------------- */
+  function renderGrantsSummary() {
+    const totalAwarded  = sum(state.grants.map(g=>amountAwarded(g)));
+    const totalReceived = sum(state.grants.map(g=>amountReceived(g)));
+    const totalSpent    = sum(state.grants.map(g=>amountSpent(g)));
+    const total = totalAwarded + totalReceived + totalSpent;
+
+    console.log('📊 Chart update - Awarded:', totalAwarded, 'Received:', totalReceived, 'Spent:', totalSpent);
+
+    // Update donut
+    const donutPath = $('#summary_donut_path');
+    const percentText = $('#summary_percent_text');
+
+    if(donutPath && percentText){
+      const percent = totalReceived > 0 ? Math.min(100, Math.round((totalSpent / totalReceived) * 100)) : 0;
+      const circumference = 402; // 2 * π * 64
+      const filled = (percent / 100) * circumference;
+
+      donutPath.setAttribute('stroke-dasharray', `${filled} ${circumference}`);
+      percentText.textContent = `${percent}%`;
+
+      // Color coding based on spending level
+      if(percent >= 90) {
+        donutPath.setAttribute('stroke', '#ef4444'); // Red
+      } else if(percent >= 70) {
+        donutPath.setAttribute('stroke', '#f59e0b'); // Amber
+      } else {
+        donutPath.setAttribute('stroke', '#22c55e'); // Green
+      }
+    }
+
+    // Update text values
+    const awardedEl = $('#summary_awarded');
+    const receivedEl = $('#summary_received');
+    const spentEl = $('#summary_spent');
+
+    if(awardedEl) awardedEl.textContent = fmtMoneyShort(totalAwarded);
+    if(receivedEl) receivedEl.textContent = fmtMoneyShort(totalReceived);
+    if(spentEl) spentEl.textContent = fmtMoneyShort(totalSpent);
+
+    // Update bars
+    const barBlue = $('#bar_blue');
+    const barYellow = $('#bar_yellow');
+    const barRed = $('#bar_red');
+
+    if(barBlue && barYellow && barRed && total > 0){
+      setTimeout(()=>{
+        barBlue.style.width = `${(totalAwarded / total) * 100}%`;
+        barYellow.style.width = `${(totalReceived / total) * 100}%`;
+        barRed.style.width = `${(totalSpent / total) * 100}%`;
+      }, 50);
+    }
   }
 
   /* ----------------------- renderers ----------------------- */
@@ -153,11 +234,10 @@
 
     if (countBadge) countBadge.textContent = `${state.grants.length} grant${state.grants.length !== 1 ? 's' : ''}`;
 
-    // TINY TWEAK: make rows clickable (add class + data-index)
     tbody.innerHTML = state.grants.map((g, idx) => {
-      const awarded = g.amountAwarded || g.amount || 0;
-      const received = g.amountReceived || 0;
-      const spent = g.amountSpent || 0;
+      const awarded = amountAwarded(g);
+      const received = amountReceived(g);
+      const spent = amountSpent(g);
 
       return `<tr class="grant-row" data-index="${idx}">
         <td>${g.title || '—'}</td>
@@ -171,7 +251,6 @@
       </tr>`;
     }).join('');
 
-    // NEW: wire row click handler once
     wireRowClicks();
   }
 
@@ -186,9 +265,9 @@
       ['Agency', g.agency],
       ['Type', g.type],
       ['Duration', g.duration],
-      ['Amount Awarded', fmtMoney(g.amountAwarded || g.amount)],
-      ['Amount Received', fmtMoney(g.amountReceived)],
-      ['Amount Spent', fmtMoney(g.amountSpent)],
+      ['Amount Awarded', fmtMoney(amountAwarded(g))],
+      ['Amount Received', fmtMoney(amountReceived(g))],
+      ['Amount Spent', fmtMoney(amountSpent(g))],
       ['Awarded', g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'],
       ['Tags', (g.tags||g.keywords||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ')]
     ];
@@ -247,10 +326,11 @@
     renderBreakdown();
     renderReports();
     renderKeywords();
+    renderGrantsSummary(); // ✅ ADD CHART RENDER
     reflectEditMode();
   }
 
-  /* ----------------------- NEW: grant details popup (view-only) ----------------------- */
+  /* ----------------------- grant details popup ----------------------- */
   function buildGrantDetailsView(g) {
     const wrap = H('div','', '');
     const grid = H('div','row g-4','');
@@ -266,9 +346,9 @@
     const badgeList = (arr=[]) =>
       (arr||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ') || '—';
 
-    const awarded  = g.amountAwarded || g.amount || 0;
-    const received = g.amountReceived || 0;
-    const spent    = g.amountSpent || 0;
+    const awarded  = amountAwarded(g);
+    const received = amountReceived(g);
+    const spent    = amountSpent(g);
     const status   = received > 0 ? '<span class="badge badge-light-success">Active</span>' :
                                     '<span class="badge badge-light-secondary">Pending</span>';
 
@@ -297,13 +377,11 @@
     openViewModal('Grant Details', bodyNode);
   }
 
-  // View-only modal wrapper that *does not* touch your existing openModal
   function openViewModal(title, bodyNode) {
     ensureModal();
     $('#grants_modal .modal-title').textContent = title;
     const body = $('#grants_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
 
-    // Hide Save, relabel Cancel → Close (restore after hide)
     const saveBtn   = $('#grants_modal_save');
     const footer    = saveBtn.closest('.modal-footer');
     const cancelBtn = footer.querySelector('[data-bs-dismiss="modal"]');
@@ -320,11 +398,7 @@
     };
     modalEl.addEventListener('hidden.bs.modal', cleanup);
 
-    // Show it
-    if (!window.bootstrap || !window.bootstrap.Modal) {
-      // fallback if bootstrap isn't ready
-      return;
-    }
+    if (!window.bootstrap || !window.bootstrap.Modal) return;
     const bs = bootstrap.Modal.getOrCreateInstance(modalEl);
     bs.show();
   }
@@ -343,28 +417,26 @@
   }
 
   /* ----------------------- edit-mode UI ----------------------- */
-  function reflectEditMode() {
+  function reflectEditMode(){
     const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
     $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
   }
-
-  function wireEditToggle() {
-    on($('#editToggle'), 'click', (e) => {
+  function wireEditToggle(){
+    on($('#editToggle'), 'click', (e)=>{
       e.preventDefault();
       editMode = !editMode;
       reflectEditMode();
     });
   }
 
-  // ONE tiny edit button per card (like profile)
   function ensureTinyButtons() {
     const cfgs = [
-      { anchor:'#total_grants_awarded', title:'Edit Totals',          build: buildTotalsModal },
-      { anchor:'#grants_tbody',         title:'Edit All Grants',      build: buildAllGrantsModal },  // NEW
-      { anchor:'#last_awarded_grant',   title:'Edit Last Awarded',    build: buildLastAwardedModal },
-      { anchor:'#breakdown',            title:'Edit Breakdown',       build: buildBreakdownModal },
-      { anchor:'#reports_grant_id',     title:'Edit Reports',         build: buildReportsModal },
-      { anchor:'#keywords_section',     title:'Edit Keywords',        build: buildKeywordsModal },
+      { anchor:'#total_grants_awarded', title:'Edit Totals',       build: buildTotalsModal },
+      { anchor:'#grants_tbody',         title:'Edit All Grants',   build: buildAllGrantsModal },
+      { anchor:'#last_awarded_grant',   title:'Edit Last Awarded', build: buildLastAwardedModal },
+      { anchor:'#breakdown',            title:'Edit Breakdown',    build: buildBreakdownModal },
+      { anchor:'#reports_grant_id',     title:'Edit Reports',      build: buildReportsModal },
+      { anchor:'#keywords_section',     title:'Edit Keywords',     build: buildKeywordsModal },
     ];
     cfgs.forEach(cfg => {
       const anchorEl = document.querySelector(cfg.anchor);
@@ -372,7 +444,8 @@
       const header = card?.querySelector('.card-header');
       if (!header) return;
       header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
-      let rail = header.querySelector('.card-toolbar'); if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
+      let rail = header.querySelector('.card-toolbar'); 
+      if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
       const btn = H('button','btn btn-sm btn-light box-edit-btn d-none','Edit');
       btn.addEventListener('click', () => openModal(cfg.title, ...cfg.build()));
       rail.appendChild(btn);
@@ -413,8 +486,8 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async () => {
-      await onSave();                                // inputs -> state
-      await persistPage('grants', {                  
+      await onSave();
+      await persistPage('grants', {
         grants: state.grants,
         total_grants_awarded: { amount: state.totals?.totalAwarded ?? 0 },
         available_budget:    { amount: state.totals?.availableBudget ?? 0 },
@@ -424,7 +497,7 @@
         keywords:            state.keywords  || []
       });
       save();
-      renderAll();
+      renderAll(); // ✅ THIS NOW INCLUDES CHART
       window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
       bsModal.hide();
     });
@@ -453,7 +526,6 @@
           <input id="in_available_budget" class="form-control" value="${state.totals.availableBudget||0}">
         </div>
       </div>
-      <div class="form-text mt-2">Tip: These can be auto-derived from raw grants if you prefer—just leave them as-is and we can add auto mode later.</div>
     `;
     const onSave = () => {
       const ta = Number($('#in_total_awarded').value||0) || 0;
@@ -493,7 +565,7 @@
           </div>
           <div class="col-md-3">
             <label class="form-label">Amount Awarded</label>
-            <input class="grant-awarded form-control" value="${g.amountAwarded||g.amount||0}">
+            <input class="grant-awarded form-control" value="${amountAwarded(g)}">
           </div>
           <div class="col-md-3">
             <label class="form-label">Awarded Date</label>
@@ -501,11 +573,11 @@
           </div>
           <div class="col-md-3">
             <label class="form-label">Amount Received</label>
-            <input class="grant-received form-control" value="${g.amountReceived||0}">
+            <input class="grant-received form-control" value="${amountReceived(g)}">
           </div>
           <div class="col-md-3">
             <label class="form-label">Amount Spent</label>
-            <input class="grant-spent form-control" value="${g.amountSpent||0}">
+            <input class="grant-spent form-control" value="${amountSpent(g)}">
           </div>
           <div class="col-md-6">
             <label class="form-label">Tags (comma-separated)</label>
@@ -565,11 +637,11 @@
 
         <div class="col-md-3"><label class="form-label">Type</label><input id="la_type" class="form-control" value="${g.type||''}"></div>
         <div class="col-md-3"><label class="form-label">Duration</label><input id="la_duration" class="form-control" value="${g.duration||''}"></div>
-        <div class="col-md-3"><label class="form-label">Amount Awarded</label><input id="la_awarded" class="form-control" value="${g.amountAwarded||g.amount||0}"></div>
+        <div class="col-md-3"><label class="form-label">Amount Awarded</label><input id="la_awarded" class="form-control" value="${amountAwarded(g)}"></div>
         <div class="col-md-3"><label class="form-label">Awarded Date</label><input id="la_awardedAt" type="date" class="form-control" value="${g.awardedAt ? new Date(g.awardedAt).toISOString().slice(0,10) : ''}"></div>
 
-        <div class="col-md-3"><label class="form-label">Amount Received</label><input id="la_received" class="form-control" value="${g.amountReceived||0}"></div>
-        <div class="col-md-3"><label class="form-label">Amount Spent</label><input id="la_spent" class="form-control" value="${g.amountSpent||0}"></div>
+        <div class="col-md-3"><label class="form-label">Amount Received</label><input id="la_received" class="form-control" value="${amountReceived(g)}"></div>
+        <div class="col-md-3"><label class="form-label">Amount Spent</label><input id="la_spent" class="form-control" value="${amountSpent(g)}"></div>
         <div class="col-md-6"><label class="form-label">Tags (comma-separated)</label><input id="la_tags" class="form-control" value="${(g.tags||g.keywords||[]).join(', ')}"></div>
       </div>
     `;
@@ -606,7 +678,8 @@
     };
 
     (state.breakdown?.categories||[]).forEach(c => list.appendChild(row(c.label||'', c.value||'')));
-    const add = H('button','btn btn-light mt-2','+ Add row'); add.addEventListener('click',()=>list.appendChild(row()));
+    const add = H('button','btn btn-light mt-2','+ Add row'); 
+    add.addEventListener('click',()=>list.appendChild(row()));
     box.appendChild(list); box.appendChild(add);
 
     const onSave = () => {
@@ -654,10 +727,11 @@
 
   /* ----------------------- boot ----------------------- */
   document.addEventListener('DOMContentLoaded', async () => {
-    await load();            // pulls from API (CV-backed) or local/static
-    ensureTinyButtons();     // one tiny Edit per card (like profile)
-    wireEditToggle();        // toggles the tiny buttons
-    renderAll();             // paint
+    console.log('🚀 Grants.js loaded');
+    await load();
+    ensureTinyButtons();
+    wireEditToggle();
+    renderAll(); // ✅ INCLUDES CHART
     window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
   });
 })();
