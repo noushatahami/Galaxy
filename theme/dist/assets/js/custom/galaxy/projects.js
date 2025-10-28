@@ -18,7 +18,7 @@
   const fmtPct = (n) => (n==null || n==='') ? '—' : `${Number(n)}%`;
   const safeText = (v, d='—') => (v==null || v==='') ? d : v;
 
-    // --- donut driver (works with or without the global window.setSnapshotProgress) ---
+  // --- donut driver (works with or without the global window.setSnapshotProgress) ---
   function driveDonut(percent, color){
     const p = Math.max(0, Math.min(100, Number(percent ?? 0) || 0));
     if (typeof window !== 'undefined' && typeof window.setSnapshotProgress === 'function') {
@@ -37,42 +37,33 @@
     }
   }
 
-
   /* ----------------------- state ----------------------- */
   let editMode = false;
+  let currentSnapshotIndex = 0; // ✅ NEW: Track which project is shown in snapshot
+
   const state = {
     // tiles
-    impact: { total: 0, change: '+0%', note: '' },
-    budget: { amount: 0, change: '+0%', note: '' },
+    impact_points: { total: '', change: '', note: '' },
+    total_budget: { amount: '', change: '', note: '' },
 
-    // projects
+    // ✅ projects is now an array of project objects
     projects: [
-      // { title, status: 'active'|'on_hold'|'stopped' }
+      // { status, days_remaining, title, description, donut_percentage, tags: [{label}] }
     ],
 
-    // snapshot
-    snapshot: {
-      status: 'Active',        // text
-      statusColor: '#20E3B2',  // dot color
-      days: 0,
-      title: '',
-      desc: '',
-      tags: [],                // ['NLP', 'Genomics']
-      donut: null              // percent number
-    },
-
-    // right column
-    latestActivity: [
-      // { name, action, iconUrl?, avatarUrl?, when }
-    ],
+    // additional project data
+    next_deadline: { label: '', date: '' },
     messages: [
-      // { from, preview, avatarUrl?, at? }
+      // { name, time_ago, subject }
     ],
-    deadline: { label: '', date: '' }
+    latest_activity: [
+      // { name, action, time_ago, avatar, approved }
+    ]
   };
 
   /* ----------------------- persistence ----------------------- */
   function save() { localStorage.setItem('galaxy_projects', JSON.stringify(state)); }
+  
   async function persistPage(page, data){
     try{
       await fetch(`${API}/page`, {
@@ -98,74 +89,71 @@
       if (rootResp.ok) {
         const root = await rootResp.json();
 
-        const impact = root.impact_points || root.impact;
-        if (impact) {
-          state.impact = {
-            total: Number(impact.total ?? 0) || 0,
-            change: impact.change ?? '',
-            note: impact.note ?? ''
-          };
-        }
-        const budget = root.total_budget || root.budget;
-        if (budget) {
-          state.budget = {
-            amount: Number(budget.amount ?? 0) || 0,
-            change: budget.change ?? '',
-            note: budget.note ?? ''
+        // Handle impact_points
+        if (root.impact_points) {
+          state.impact_points = {
+            total: root.impact_points.total ?? '',
+            change: root.impact_points.change ?? '',
+            note: root.impact_points.note ?? ''
           };
         }
 
-        if (root.project_status && Array.isArray(root.project_status.projects)) {
-          state.projects = root.project_status.projects.map(p => ({
-            title: p.label || p.title || 'Untitled',
-            status: p.status || 'active'
-          }));
-        } else if (Array.isArray(root.projects)) {
+        // Handle total_budget
+        if (root.total_budget) {
+          state.total_budget = {
+            amount: root.total_budget.amount ?? '',
+            change: root.total_budget.change ?? '',
+            note: root.total_budget.note ?? ''
+          };
+        }
+
+        // Handle projects array
+        if (Array.isArray(root.projects)) {
           state.projects = root.projects.map(p => ({
-            title: p.title || p.label || 'Untitled',
-            status: p.status || 'active'
+            status: p.status || 'active',
+            days_remaining: Number(p.days_remaining || 0) || 0,
+            title: p.title || '',
+            description: p.description || '',
+            donut_percentage: p.donut_percentage != null ? Number(p.donut_percentage) : null,
+            tags: (p.tags || []).map(t => {
+              if (typeof t === 'string') return { label: t };
+              return { label: t.label || '' };
+            }).filter(t => t.label)
           }));
         }
 
-        const snap = root.project_snapshot || root.snapshot;
-        if (snap) {
-          state.snapshot = {
-            status: snap.status || '',
-            statusColor: snap.statusColor || '#20E3B2',
-            days: Number(snap.days || snap.days_remaining || 0) || 0,
-            title: snap.title || '',
-            desc: snap.description || snap.desc || '',
-            tags: (snap.tags || []).map(t => typeof t === 'string' ? t : (t.label || '')).filter(Boolean),
-            donut: (snap.donut_percentage != null ? Number(snap.donut_percentage)
-                                                  : (snap.donut != null ? Number(snap.donut) : null))
+        // Handle next_deadline
+        if (root.next_deadline) {
+          state.next_deadline = {
+            label: root.next_deadline.label || '',
+            date: root.next_deadline.date || ''
           };
         }
 
-        if (Array.isArray(root.latest_activity)) {
-          state.latestActivity = root.latest_activity.map(a => ({
-            name: a.name || '',
-            action: a.action || '',
-            when: a.time_ago || a.when || '',
-            avatarUrl: a.avatar || ''
-          }));
-        }
+        // Handle messages
         if (Array.isArray(root.messages)) {
           state.messages = root.messages.map(m => ({
-            from: m.name || m.from || '',
-            preview: m.subject || m.preview || '',
-            avatarUrl: m.avatar || ''
+            name: m.name || '',
+            time_ago: m.time_ago || '',
+            subject: m.subject || ''
           }));
         }
-        if (root.next_deadline || root.deadline) {
-          const dl = root.next_deadline || root.deadline;
-          state.deadline = { label: dl.label || '', date: dl.date || '' };
+
+        // Handle latest_activity
+        if (Array.isArray(root.latest_activity)) {
+          state.latest_activity = root.latest_activity.map(a => ({
+            name: a.name || '',
+            action: a.action || '',
+            time_ago: a.time_ago || '',
+            avatar: a.avatar || '',
+            approved: a.approved || false
+          }));
         }
       }
 
-      // 3) Optional granular overrides (if your backend exposes them)
-      const [tiles, projects, snapshot, activity, messages, deadline] = await Promise.allSettled([
+      // 3) Optional granular overrides
+      const [tiles, snapshot, activity, messages, deadline] = await Promise.allSettled([
         fetch(`${API}/projects/tiles`),
-        fetch(`${API}/projects`),          // some backends return list directly
         fetch(`${API}/projects/snapshot`),
         fetch(`${API}/projects/activity`),
         fetch(`${API}/projects/messages`),
@@ -174,27 +162,42 @@
 
       if (tiles.status==='fulfilled' && tiles.value.ok) {
         const t = await tiles.value.json();
-        if (t.impact) state.impact = t.impact;
-        if (t.budget) state.budget = t.budget;
+        if (t.impact) state.impact_points = t.impact;
+        if (t.budget) state.total_budget = t.budget;
       }
-      if (projects.status==='fulfilled' && projects.value.ok) {
-        const p = await projects.value.json();
-        if (Array.isArray(p.projects))      state.projects = p.projects;
-        else if (Array.isArray(p))          state.projects = p;
-      }
+
+      // Handle snapshot as a single project
       if (snapshot.status==='fulfilled' && snapshot.value.ok) {
-        state.snapshot = await snapshot.value.json();
+        const snap = await snapshot.value.json();
+        if (snap && Object.keys(snap).length > 0) {
+          const snapProject = {
+            status: snap.status || 'active',
+            days_remaining: Number(snap.days_remaining || snap.days || 0) || 0,
+            title: snap.title || '',
+            description: snap.description || snap.desc || '',
+            donut_percentage: snap.donut_percentage != null ? Number(snap.donut_percentage) : null,
+            tags: (snap.tags || []).map(t => {
+              if (typeof t === 'string') return { label: t };
+              return { label: t.label || '' };
+            }).filter(t => t.label)
+          };
+          
+          if (!state.projects || state.projects.length === 0) {
+            state.projects = [snapProject];
+          }
+        }
       }
+
       if (activity.status==='fulfilled' && activity.value.ok) {
         const a = await activity.value.json();
-        state.latestActivity = a.items || a || [];
+        state.latest_activity = a.items || a || [];
       }
       if (messages.status==='fulfilled' && messages.value.ok) {
         const m = await messages.value.json();
         state.messages = m.items || m || [];
       }
       if (deadline.status==='fulfilled' && deadline.value.ok) {
-        state.deadline = await deadline.value.json();
+        state.next_deadline = await deadline.value.json();
       }
     } catch {}
 
@@ -216,12 +219,12 @@
     const bc = $('#budget_change');
     const bnote = $('#budget_note');
 
-    if (it) it.textContent = safeText(state.impact.total);
-    if (ic) ic.textContent = safeText(state.impact.change);
-    if (inote) inote.textContent = safeText(state.impact.note);
-    if (ba) ba.textContent = fmtMoney(state.budget.amount);
-    if (bc) bc.textContent = safeText(state.budget.change);
-    if (bnote) bnote.textContent = safeText(state.budget.note);
+    if (it) it.textContent = safeText(state.impact_points.total);
+    if (ic) ic.textContent = safeText(state.impact_points.change);
+    if (inote) inote.textContent = safeText(state.impact_points.note);
+    if (ba) ba.textContent = fmtMoney(state.total_budget.amount);
+    if (bc) bc.textContent = safeText(state.total_budget.change);
+    if (bnote) bnote.textContent = safeText(state.total_budget.note);
   }
 
   function renderProjects() {
@@ -229,6 +232,7 @@
     const cA = $('#count_active');
     const cH = $('#count_on_hold');
     const cS = $('#count_stopped');
+    const cC = $('#count_completed');
     if (!wrap) return;
 
     wrap.innerHTML = '';
@@ -236,23 +240,58 @@
     if (!list.length) {
       wrap.innerHTML = '<div class="text-gray-400">—</div>';
     } else {
-      list.forEach(p => {
-        const dot = p.status==='active' ? '#20E3B2' : (p.status==='on_hold' ? '#F5A623' : '#A0A0A0');
+      list.forEach((p, index) => {
+        const statusColors = {
+          'active': '#20E3B2',
+          'on_hold': '#F5A623',
+          'stopped': '#A0A0A0',
+          'completed': '#4A90E2'
+        };
+        const dot = statusColors[p.status] || '#20E3B2';
         const col = H('div','col-sm-6','');
-        col.appendChild(H('div','px-3 py-2 rounded bg-body-secondary', `<span style="color:${dot}">●</span> ${safeText(p.title,'Untitled')}`));
+        
+        // ✅ NEW: Make project clickable
+        const projectDiv = H('div','px-3 py-2 rounded bg-body-secondary', 
+          `<span style="color:${dot}">●</span> ${safeText(p.title,'Untitled')}`
+        );
+        projectDiv.style.cursor = 'pointer';
+        projectDiv.style.transition = 'all 0.2s ease';
+        
+        // Hover effect
+        projectDiv.addEventListener('mouseenter', () => {
+          projectDiv.style.backgroundColor = 'rgba(255,255,255,0.15)';
+        });
+        projectDiv.addEventListener('mouseleave', () => {
+          projectDiv.style.backgroundColor = '';
+        });
+        
+        // ✅ NEW: Click to show in snapshot
+        projectDiv.addEventListener('click', () => {
+          currentSnapshotIndex = index;
+          renderSnapshot();
+        });
+        
+        col.appendChild(projectDiv);
         wrap.appendChild(col);
       });
     }
-    const active  = list.filter(p=>p.status==='active').length;
-    const onHold  = list.filter(p=>p.status==='on_hold').length;
-    const stopped = list.filter(p=>p.status==='stopped').length;
+    
+    const active    = list.filter(p=>p.status==='active').length;
+    const onHold    = list.filter(p=>p.status==='on_hold').length;
+    const stopped   = list.filter(p=>p.status==='stopped').length;
+    const completed = list.filter(p=>p.status==='completed').length;
+    
     if (cA) cA.textContent = `(${active})`;
     if (cH) cH.textContent = `(${onHold})`;
     if (cS) cS.textContent = `(${stopped})`;
+    if (cC) cC.textContent = `(${completed})`;
   }
 
-    function renderSnapshot() {
-    const s   = state.snapshot || {};
+  function renderSnapshot() {
+    // ✅ Get the project at currentSnapshotIndex
+    const projects = state.projects || [];
+    const s = projects[currentSnapshotIndex] || {};
+
     const dot = $('#snapshot_status_dot');
     const st  = $('#snapshot_status');
     const sd  = $('#snapshot_days');
@@ -260,80 +299,104 @@
     const ds  = $('#snapshot_desc');
     const tg  = $('#snapshot_tags');
 
-    if (dot) dot.style.color = s.statusColor || '#20E3B2';
+    // Status color mapping
+    const statusColors = {
+      'active': '#20E3B2',
+      'on_hold': '#F5A623',
+      'stopped': '#A0A0A0',
+      'completed': '#4A90E2'
+    };
+    const statusColor = statusColors[s.status] || '#20E3B2';
+
+    if (dot) dot.style.color = statusColor;
     if (st)  st.textContent  = safeText(s.status);
-    if (sd)  sd.textContent  = Number(s.days||0);
+    if (sd)  sd.textContent  = Number(s.days_remaining||0);
     if (tt)  tt.textContent  = safeText(s.title);
-    if (ds)  ds.textContent  = safeText(s.desc);
+    if (ds)  ds.textContent  = safeText(s.description);
 
     if (tg) {
       tg.innerHTML = '';
       const arr = s.tags || [];
-      if (!arr.length) tg.appendChild(H('span','text-gray-400','—'));
-      else arr.forEach(t => tg.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', t)));
+      if (!arr.length) {
+        tg.appendChild(H('span','text-gray-400','—'));
+      } else {
+        arr.forEach(t => {
+          const label = typeof t === 'string' ? t : (t.label || '');
+          if (label) {
+            tg.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', label));
+          }
+        });
+      }
     }
 
-    // 🔸 Drive the donut SVG (percent + ring color)
-    //    Expects the HTML to have: .snapshot-donut-ring + #snapshot_donut_pct
-    if (s.donut == null || s.donut === '') {
-      driveDonut(0, s.statusColor || '#20E3B2');        // show 0% if missing
+    // Drive the donut SVG
+    if (s.donut_percentage == null || s.donut_percentage === '') {
+      driveDonut(0, statusColor);
       const label = document.getElementById('snapshot_donut_pct');
       if (label) label.textContent = '—';
     } else {
-      driveDonut(Number(s.donut) || 0, s.statusColor || '#20E3B2');
+      driveDonut(Number(s.donut_percentage) || 0, statusColor);
     }
   }
 
-
   function renderLatestActivity() {
-    const list = $('#latest_activity_list'); if (!list) return;
+    const list = $('#latest_activity_list'); 
+    if (!list) return;
+    
     list.innerHTML = '';
-    const items = state.latestActivity || [];
+    const items = state.latest_activity || [];
     if (!items.length) {
       list.appendChild(H('div','text-gray-400','—'));
       return;
     }
+    
     items.forEach(i => {
       const row = H('div','d-flex align-items-center justify-content-between','');
       row.innerHTML = `
         <div class="d-flex align-items-center gap-3">
           <div class="symbol symbol-35px">
-            <img src="${i.avatarUrl || 'assets/media/avatars/blank.png'}" alt="">
+            <img src="${i.avatar || 'assets/media/avatars/blank.png'}" alt="">
           </div>
           <div>
             <div class="fw-semibold">${safeText(i.name,'—')}</div>
             <div class="text-gray-300 fs-8">${safeText(i.action,'')}</div>
           </div>
         </div>
-        <span class="text-gray-500 fs-8">${safeText(i.when,'')}</span>
+        <span class="text-gray-500 fs-8">${safeText(i.time_ago,'')}</span>
       `;
       list.appendChild(row);
     });
   }
 
   function renderMessages() {
-    const first = $('#messages_first'); if (!first) return;
+    const first = $('#messages_first'); 
+    if (!first) return;
+    
     first.innerHTML = '';
     const msgs = state.messages || [];
     if (!msgs.length) {
       first.appendChild(H('div','text-gray-400','—'));
       return;
     }
+    
     const m = msgs[0];
     const card = H('div','d-flex align-items-center gap-3','');
     card.innerHTML = `
-      <div class="symbol symbol-35px"><img src="${m.avatarUrl || 'assets/media/avatars/blank.png'}" alt=""></div>
+      <div class="symbol symbol-35px">
+        <img src="${m.avatar || 'assets/media/avatars/blank.png'}" alt="">
+      </div>
       <div>
-        <div class="fw-semibold">${safeText(m.from,'—')}</div>
-        <div class="text-gray-300 fs-8">${safeText(m.preview,'')}</div>
+        <div class="fw-semibold">${safeText(m.name,'—')}</div>
+        <div class="text-gray-300 fs-8">${safeText(m.subject,'')}</div>
       </div>`;
     first.appendChild(card);
   }
 
   function renderDeadline() {
-    const l = $('#deadline_label'); const d = $('#deadline_date');
-    if (l) l.textContent = safeText(state.deadline.label);
-    if (d) d.textContent = safeText(state.deadline.date);
+    const l = $('#deadline_label'); 
+    const d = $('#deadline_date');
+    if (l) l.textContent = safeText(state.next_deadline.label);
+    if (d) d.textContent = safeText(state.next_deadline.date);
   }
 
   function renderAll() {
@@ -348,9 +411,11 @@
 
   /* ----------------------- edit-mode shell ----------------------- */
   function reflectEditMode() {
-    const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
+    const t = $('#editToggle'); 
+    if (t) t.textContent = editMode ? 'Done' : 'Edit';
     $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
   }
+  
   function wireEditToggle() {
     on($('#editToggle'), 'click', (e) => {
       e.preventDefault();
@@ -358,6 +423,7 @@
       reflectEditMode();
     });
   }
+  
   function ensureTinyButtons() {
     const cfgs = [
       { anchor:'#impact_total',   title:'Edit Impact',    build: buildImpactModal },
@@ -374,7 +440,11 @@
       const header = card?.querySelector('.card-header');
       if (!header) return;
       header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
-      let rail = header.querySelector('.card-toolbar'); if (!rail) { rail = H('div','card-toolbar'); header.appendChild(rail); }
+      let rail = header.querySelector('.card-toolbar'); 
+      if (!rail) { 
+        rail = H('div','card-toolbar'); 
+        header.appendChild(rail); 
+      }
       const btn = H('button','btn btn-sm btn-light box-edit-btn d-none','Edit');
       btn.addEventListener('click', () => openModal(cfg.title, ...cfg.build()));
       rail.appendChild(btn);
@@ -409,38 +479,37 @@
     document.body.appendChild(shell);
     bsModal = new bootstrap.Modal(shell);
   }
+  
   function openModal(title, bodyNode, onSave) {
     ensureModal();
     $('#projects_modal .modal-title').textContent = title;
-    const body = $('#projects_modal_body'); body.innerHTML = ''; body.appendChild(bodyNode);
+    const body = $('#projects_modal_body'); 
+    body.innerHTML = ''; 
+    body.appendChild(bodyNode);
+    
     const old = $('#projects_modal_save');
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
+    
     neo.addEventListener('click', async () => {
-      await onSave();                                // inputs -> state
-      await persistPage('projects', {                // NEW
-        impact_points:   state.impact,
-        total_budget:    state.budget,
-        project_status:  { projects: state.projects },
-        project_snapshot:{
-          status: state.snapshot?.status || '',
-          statusColor: state.snapshot?.statusColor || '#20E3B2',
-          days_remaining: Number(state.snapshot?.days || 0),
-          title: state.snapshot?.title || '',
-          description: state.snapshot?.desc || '',
-          tags: state.snapshot?.tags || [],
-          donut_percentage: (state.snapshot?.donut ?? null)
-        },
-        latest_activity: state.latestActivity || [],
-        messages:        state.messages || [],
-        next_deadline:   state.deadline || { label:'', date:'' }
+      await onSave();
+      
+      await persistPage('projects', {
+        impact_points:   state.impact_points,
+        total_budget:    state.total_budget,
+        projects:        state.projects,
+        latest_activity: state.latest_activity,
+        messages:        state.messages,
+        next_deadline:   state.next_deadline
       });
+      
       save();
       renderAll();
       bsModal.hide();
     });
     bsModal.show();
   }
+  
   function section(title) {
     const wrap = H('div','mb-6','');
     wrap.appendChild(H('div','fw-bold fs-5 mb-3', title));
@@ -454,13 +523,22 @@
     const {wrap, box} = section('Total Impact Points');
     box.innerHTML = `
       <div class="row g-3">
-        <div class="col-md-4"><label class="form-label">Total</label><input id="imp_total" class="form-control" value="${state.impact.total||0}"></div>
-        <div class="col-md-4"><label class="form-label">Change</label><input id="imp_change" class="form-control" value="${state.impact.change||''}" placeholder="+5%"></div>
-        <div class="col-md-12"><label class="form-label">Note</label><input id="imp_note" class="form-control" value="${state.impact.note||''}" placeholder="Short note"></div>
+        <div class="col-md-4">
+          <label class="form-label">Total</label>
+          <input id="imp_total" class="form-control" value="${state.impact_points.total||''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Change</label>
+          <input id="imp_change" class="form-control" value="${state.impact_points.change||''}" placeholder="+5%">
+        </div>
+        <div class="col-md-12">
+          <label class="form-label">Note</label>
+          <input id="imp_note" class="form-control" value="${state.impact_points.note||''}" placeholder="Short note">
+        </div>
       </div>`;
     const onSave = () => {
-      state.impact = {
-        total: Number($('#imp_total').value||0)||0,
+      state.impact_points = {
+        total: $('#imp_total').value.trim(),
         change: $('#imp_change').value.trim(),
         note: $('#imp_note').value.trim()
       };
@@ -472,13 +550,22 @@
     const {wrap, box} = section('Total Budget');
     box.innerHTML = `
       <div class="row g-3">
-        <div class="col-md-4"><label class="form-label">Amount</label><input id="bud_amount" class="form-control" value="${state.budget.amount||0}"></div>
-        <div class="col-md-4"><label class="form-label">Change</label><input id="bud_change" class="form-control" value="${state.budget.change||''}" placeholder="+2%"></div>
-        <div class="col-md-12"><label class="form-label">Note</label><input id="bud_note" class="form-control" value="${state.budget.note||''}" placeholder="Short note"></div>
+        <div class="col-md-4">
+          <label class="form-label">Amount</label>
+          <input id="bud_amount" class="form-control" value="${state.total_budget.amount||''}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Change</label>
+          <input id="bud_change" class="form-control" value="${state.total_budget.change||''}" placeholder="+2%">
+        </div>
+        <div class="col-md-12">
+          <label class="form-label">Note</label>
+          <input id="bud_note" class="form-control" value="${state.total_budget.note||''}" placeholder="Short note">
+        </div>
       </div>`;
     const onSave = () => {
-      state.budget = {
-        amount: Number($('#bud_amount').value||0)||0,
+      state.total_budget = {
+        amount: $('#bud_amount').value.trim(),
         change: $('#bud_change').value.trim(),
         note: $('#bud_note').value.trim()
       };
@@ -488,36 +575,84 @@
 
   function buildProjectsModal() {
     const {wrap, box} = section('Projects');
-    const list = H('div','d-flex flex-column gap-2','');
+    const list = H('div','d-flex flex-column gap-4','');
 
-    const row = (title='', status='active') => {
-      const r = H('div','row g-2 align-items-center','');
+    const row = (proj = {}) => {
+      const r = H('div','p-3 rounded border border-white border-opacity-10 bg-white bg-opacity-5','');
+      const tags = (proj.tags || []).map(t => typeof t === 'string' ? t : (t.label || '')).join(', ');
+      
       r.innerHTML = `
-        <div class="col-md-7"><input class="form-control" placeholder="Project title" value="${title}"></div>
-        <div class="col-md-3">
-          <select class="form-select">
-            <option value="active"${status==='active'?' selected':''}>Active</option>
-            <option value="on_hold"${status==='on_hold'?' selected':''}>On Hold</option>
-            <option value="stopped"${status==='stopped'?' selected':''}>Stopped</option>
-          </select>
+        <div class="row g-3">
+          <div class="col-md-12">
+            <label class="form-label fw-bold">Title</label>
+            <input class="form-control proj-title" placeholder="Project title" value="${proj.title||''}">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-bold">Description</label>
+            <textarea class="form-control proj-desc" rows="3" placeholder="Project description">${proj.description||''}</textarea>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Status</label>
+            <select class="form-select proj-status">
+              <option value="active"${proj.status==='active'?' selected':''}>Active</option>
+              <option value="on_hold"${proj.status==='on_hold'?' selected':''}>On Hold</option>
+              <option value="stopped"${proj.status==='stopped'?' selected':''}>Stopped</option>
+              <option value="completed"${proj.status==='completed'?' selected':''}>Completed</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Days Remaining</label>
+            <input type="number" class="form-control proj-days" value="${proj.days_remaining||0}">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label fw-bold">Progress %</label>
+            <input type="number" class="form-control proj-donut" value="${proj.donut_percentage??''}" placeholder="0-100">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label fw-bold">Tags (comma-separated)</label>
+            <input class="form-control proj-tags" placeholder="NLP, Genomics, AI" value="${tags}">
+          </div>
+          <div class="col-md-12">
+            <button class="btn btn-light-danger w-100">Remove Project</button>
+          </div>
         </div>
-        <div class="col-md-2 d-grid">
-          <button class="btn btn-light-danger">Remove</button>
-        </div>`;
+      `;
+      
+      // ✅ NEW: Remove button is now under the project box
       on(r.querySelector('.btn-light-danger'),'click',()=>r.remove());
       return r;
     };
 
-    (state.projects||[]).forEach(p => list.appendChild(row(p.title||'', p.status||'active')));
-    const add = H('button','btn btn-light mt-2','+ Add project'); on(add,'click',()=>list.appendChild(row()));
-    box.appendChild(list); box.appendChild(add);
+    (state.projects||[]).forEach(p => list.appendChild(row(p)));
+    
+    const add = H('button','btn btn-light mt-2','+ Add project'); 
+    on(add,'click',()=>list.appendChild(row()));
+    
+    box.appendChild(list); 
+    box.appendChild(add);
 
     const onSave = () => {
       const arr = [];
-      list.querySelectorAll(':scope > .row').forEach(r=>{
-        const title = r.querySelector('input').value.trim();
-        const status = r.querySelector('select').value;
-        if (title) arr.push({ title, status });
+      list.querySelectorAll(':scope > div.p-3').forEach(r=>{
+        const title = r.querySelector('.proj-title').value.trim();
+        const description = r.querySelector('.proj-desc').value.trim();
+        const status = r.querySelector('.proj-status').value;
+        const days_remaining = Number(r.querySelector('.proj-days').value) || 0;
+        const donut_val = r.querySelector('.proj-donut').value.trim();
+        const donut_percentage = donut_val === '' ? null : Number(donut_val);
+        const tagsStr = r.querySelector('.proj-tags').value;
+        const tags = tagsStr.split(',').map(s=>s.trim()).filter(Boolean).map(label => ({label}));
+        
+        if (title) {
+          arr.push({ 
+            status, 
+            days_remaining, 
+            title, 
+            description,
+            donut_percentage,
+            tags
+          });
+        }
       });
       state.projects = arr;
     };
@@ -525,30 +660,81 @@
   }
 
   function buildSnapshotModal() {
-    const {wrap, box} = section('Project Snapshot');
-    const s = state.snapshot || {};
+    // ✅ Edit the project at currentSnapshotIndex
+    const {wrap, box} = section('Project Snapshot (Currently Viewing)');
+    const s = (state.projects && state.projects[currentSnapshotIndex]) ? state.projects[currentSnapshotIndex] : {};
+    const tags = (s.tags || []).map(t => typeof t === 'string' ? t : (t.label || '')).join(', ');
+    
+    // Status color mapping
+    const statusColors = {
+      'active': '#20E3B2',
+      'on_hold': '#F5A623',
+      'stopped': '#A0A0A0',
+      'completed': '#4A90E2'
+    };
+    const currentColor = statusColors[s.status] || '#20E3B2';
+    
     box.innerHTML = `
       <div class="row g-3">
-        <div class="col-md-4"><label class="form-label">Status</label><input id="sn_status" class="form-control" value="${s.status||''}" placeholder="Active"></div>
-        <div class="col-md-4"><label class="form-label">Status Dot Color</label><input id="sn_color" type="color" class="form-control form-control-color" value="${s.statusColor||'#20E3B2'}"></div>
-        <div class="col-md-4"><label class="form-label">Days</label><input id="sn_days" class="form-control" value="${s.days||0}"></div>
+        <div class="col-md-4">
+          <label class="form-label">Status</label>
+          <select id="sn_status" class="form-select">
+            <option value="active"${s.status==='active'?' selected':''}>Active</option>
+            <option value="on_hold"${s.status==='on_hold'?' selected':''}>On Hold</option>
+            <option value="stopped"${s.status==='stopped'?' selected':''}>Stopped</option>
+            <option value="completed"${s.status==='completed'?' selected':''}>Completed</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Status Dot Color (auto from status)</label>
+          <input id="sn_color" type="color" class="form-control form-control-color" value="${currentColor}" disabled>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Days Remaining</label>
+          <input id="sn_days" type="number" class="form-control" value="${s.days_remaining||0}">
+        </div>
 
-        <div class="col-md-12"><label class="form-label">Title</label><input id="sn_title" class="form-control" value="${s.title||''}"></div>
-        <div class="col-md-12"><label class="form-label">Description</label><textarea id="sn_desc" class="form-control" rows="4">${s.desc||''}</textarea></div>
+        <div class="col-md-12">
+          <label class="form-label">Title</label>
+          <input id="sn_title" class="form-control" value="${s.title||''}">
+        </div>
+        <div class="col-md-12">
+          <label class="form-label">Description</label>
+          <textarea id="sn_desc" class="form-control" rows="4">${s.description||''}</textarea>
+        </div>
 
-        <div class="col-md-12"><label class="form-label">Tags (comma or newline)</label><textarea id="sn_tags" class="form-control" rows="3">${(s.tags||[]).join(', ')}</textarea></div>
-        <div class="col-md-4"><label class="form-label">Donut %</label><input id="sn_donut" class="form-control" value="${s.donut??''}" placeholder="e.g. 72"></div>
+        <div class="col-md-12">
+          <label class="form-label">Tags (comma-separated)</label>
+          <input id="sn_tags" class="form-control" value="${tags}" placeholder="NLP, Genomics, AI">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Donut %</label>
+          <input id="sn_donut" type="number" class="form-control" value="${s.donut_percentage??''}" placeholder="0-100">
+        </div>
       </div>`;
+    
     const onSave = () => {
-      state.snapshot = {
-        status: $('#sn_status').value.trim(),
-        statusColor: $('#sn_color').value || '#20E3B2',
-        days: Number($('#sn_days').value||0)||0,
+      const newStatus = $('#sn_status').value;
+      
+      const tags = $('#sn_tags').value.split(',').map(s=>s.trim()).filter(Boolean).map(label => ({label}));
+      const donutVal = $('#sn_donut').value.trim();
+      
+      const updatedProject = {
+        status: newStatus,
+        days_remaining: Number($('#sn_days').value||0)||0,
         title: $('#sn_title').value.trim(),
-        desc: $('#sn_desc').value.trim(),
-        tags: $('#sn_tags').value.replace(/\n/g, ',').split(',').map(s=>s.trim()).filter(Boolean),
-        donut: $('#sn_donut').value==='' ? null : Number($('#sn_donut').value)||0
+        description: $('#sn_desc').value.trim(),
+        tags: tags,
+        donut_percentage: donutVal === '' ? null : Number(donutVal)
       };
+      
+      // Update the project at currentSnapshotIndex
+      if (!state.projects) state.projects = [];
+      if (currentSnapshotIndex >= state.projects.length) {
+        state.projects.push(updatedProject);
+      } else {
+        state.projects[currentSnapshotIndex] = updatedProject;
+      }
     };
     return [wrap, onSave];
   }
@@ -557,32 +743,51 @@
     const {wrap, box} = section('Latest Activity');
     const list = H('div','d-flex flex-column gap-2','');
 
-    const row = (name='', action='', when='') => {
+    const row = (item = {}) => {
       const r = H('div','row g-2 align-items-center','');
       r.innerHTML = `
-        <div class="col-md-3"><input class="form-control" placeholder="Name" value="${name}"></div>
-        <div class="col-md-6"><input class="form-control" placeholder="Action" value="${action}"></div>
-        <div class="col-md-2"><input class="form-control" placeholder="When" value="${when}" ></div>
-        <div class="col-md-1 d-grid">
+        <div class="col-md-3">
+          <input class="form-control act-name" placeholder="Name" value="${item.name||''}">
+        </div>
+        <div class="col-md-5">
+          <input class="form-control act-action" placeholder="Action" value="${item.action||''}">
+        </div>
+        <div class="col-md-2">
+          <input class="form-control act-time" placeholder="Time" value="${item.time_ago||''}" >
+        </div>
+        <div class="col-md-2 d-grid">
           <button class="btn btn-light-danger"><span class="text-gray-900">X</span></button>
         </div>`;
       on(r.querySelector('button'),'click',()=>r.remove());
       return r;
     };
 
-    (state.latestActivity||[]).forEach(i => list.appendChild(row(i.name||'', i.action||'', i.when||'')));
-    const add = H('button','btn btn-light mt-2','+ Add item'); on(add,'click',()=>list.appendChild(row()));
-    box.appendChild(list); box.appendChild(add);
+    (state.latest_activity||[]).forEach(i => list.appendChild(row(i)));
+    
+    const add = H('button','btn btn-light mt-2','+ Add item'); 
+    on(add,'click',()=>list.appendChild(row()));
+    
+    box.appendChild(list); 
+    box.appendChild(add);
 
     const onSave = () => {
       const arr = [];
       list.querySelectorAll(':scope > .row').forEach(r=>{
-        const [name, action, when] = r.querySelectorAll('input');
-        if (name.value.trim() || action.value.trim()) {
-          arr.push({ name: name.value.trim(), action: action.value.trim(), when: when.value.trim() });
+        const name = r.querySelector('.act-name').value.trim();
+        const action = r.querySelector('.act-action').value.trim();
+        const time_ago = r.querySelector('.act-time').value.trim();
+        
+        if (name || action) {
+          arr.push({ 
+            name, 
+            action, 
+            time_ago,
+            avatar: '',
+            approved: false
+          });
         }
       });
-      state.latestActivity = arr;
+      state.latest_activity = arr;
     };
     return [wrap, onSave];
   }
@@ -591,11 +796,15 @@
     const {wrap, box} = section('Messages (first will be shown)');
     const list = H('div','d-flex flex-column gap-2','');
 
-    const row = (from='', preview='') => {
+    const row = (msg = {}) => {
       const r = H('div','row g-2 align-items-center','');
       r.innerHTML = `
-        <div class="col-md-3"><input class="form-control" placeholder="From" value="${from}"></div>
-        <div class="col-md-8"><input class="form-control" placeholder="Preview" value="${preview}"></div>
+        <div class="col-md-3">
+          <input class="form-control msg-name" placeholder="From" value="${msg.name||''}">
+        </div>
+        <div class="col-md-8">
+          <input class="form-control msg-subject" placeholder="Subject" value="${msg.subject||''}">
+        </div>
         <div class="col-md-1 d-grid">
           <button class="btn btn-light-danger"><span class="text-gray-900">X</span></button>
         </div>`;
@@ -603,16 +812,26 @@
       return r;
     };
 
-    (state.messages||[]).forEach(m => list.appendChild(row(m.from||'', m.preview||'')));
-    const add = H('button','btn btn-light mt-2','+ Add message'); on(add,'click',()=>list.appendChild(row()));
-    box.appendChild(list); box.appendChild(add);
+    (state.messages||[]).forEach(m => list.appendChild(row(m)));
+    
+    const add = H('button','btn btn-light mt-2','+ Add message'); 
+    on(add,'click',()=>list.appendChild(row()));
+    
+    box.appendChild(list); 
+    box.appendChild(add);
 
     const onSave = () => {
       const arr = [];
       list.querySelectorAll(':scope > .row').forEach(r=>{
-        const [from, preview] = r.querySelectorAll('input');
-        if (from.value.trim() || preview.value.trim()) {
-          arr.push({ from: from.value.trim(), preview: preview.value.trim() });
+        const name = r.querySelector('.msg-name').value.trim();
+        const subject = r.querySelector('.msg-subject').value.trim();
+        
+        if (name || subject) {
+          arr.push({ 
+            name, 
+            subject,
+            time_ago: ''
+          });
         }
       });
       state.messages = arr;
@@ -624,11 +843,17 @@
     const {wrap, box} = section('Next Deadline');
     box.innerHTML = `
       <div class="row g-3">
-        <div class="col-md-6"><label class="form-label">Label</label><input id="dl_label" class="form-control" value="${state.deadline.label||''}" placeholder="Proposal round"></div>
-        <div class="col-md-6"><label class="form-label">Date</label><input id="dl_date" type="date" class="form-control" value="${state.deadline.date||''}"></div>
+        <div class="col-md-6">
+          <label class="form-label">Label</label>
+          <input id="dl_label" class="form-control" value="${state.next_deadline.label||''}" placeholder="Proposal round">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Date</label>
+          <input id="dl_date" type="date" class="form-control" value="${state.next_deadline.date||''}">
+        </div>
       </div>`;
     const onSave = () => {
-      state.deadline = {
+      state.next_deadline = {
         label: $('#dl_label').value.trim(),
         date: $('#dl_date').value
       };

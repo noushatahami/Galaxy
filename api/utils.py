@@ -168,20 +168,18 @@ def extract_cv_data(cv_text: str) -> dict:
             "keywords": []
         },
 
-        # Projects is an OBJECT (not a list) with all tiles your UI renders
+        # ✅ NEW Projects structure: array of project objects
         "projects": {
-            "project_snapshot": {
-                "status": "",
-                "days_remaining": 0,
-                "title": "",
-                "description": "",
-                "donut_percentage": 0,
-                "tags": [{"label": ""}]
-            },
-            "project_status": {
-                "counts": {"active": 0, "on_hold": 0, "stopped": 0},
-                "projects": [{"label": "", "status": "", "selected": False}]
-            },
+            "projects": [
+                {
+                    "status": "",
+                    "days_remaining": 0,
+                    "title": "",
+                    "description": "",
+                    "donut_percentage": 0,
+                    "tags": [{"label": ""}]
+                }
+            ],
             "impact_points": {"total": "", "change": "", "note": ""},
             "total_budget": {"amount": "", "change": "", "note": ""},
             "next_deadline": {"label": "", "date": ""},
@@ -225,7 +223,11 @@ def extract_cv_data(cv_text: str) -> dict:
 
     - publications.publications is an array of items:
     {"title":"", "authors":[], "venue":"", "year":0, "citationCount":0, "url":""}
-    - Projects MUST be an object with keys shown above (not an array).
+    
+    - Projects MUST be an object with a "projects" array containing project objects.
+    Each project has: status, days_remaining, title, description, donut_percentage, tags.
+    Status should be one of: "active", "on_hold", "stopped", or "completed".
+    
     - Grants MUST include 'grants' array and the sub-objects ('reports','breakdown','keywords').
     * Normalize amounts to digits-only numbers when possible.
     * awardedAt should be YYYY-MM-DD if present, else "".
@@ -419,7 +421,7 @@ def extract_cv_data(cv_text: str) -> dict:
             # also pick institutions from education & positions if present
             edu_insts = []
             for e in prof.get("education", []):
-                m = re.search(r"(?:University|Institute|Hospital|College|UHN|UofT|Toronto Rehabilitation|Queen’s)", str(e), re.I)
+                m = re.search(r"(?:University|Institute|Hospital|College|UHN|UofT|Toronto Rehabilitation|Queen's)", str(e), re.I)
                 if m: edu_insts.append(str(e))
             pos_insts = [s for s in prof.get("positions", []) if re.search(r" at |, ", s)]
             prof["affiliations"] = _unique(aff_lines + edu_insts + pos_insts)[:12]
@@ -429,16 +431,9 @@ def extract_cv_data(cv_text: str) -> dict:
         pubs.setdefault("publications", [])
         parsed["publications"] = pubs
 
-        # Projects defaults (object shape your UI expects)
+        # ✅ Projects defaults (NEW STRUCTURE)
         proj = parsed.get("projects") or {}
-        proj.setdefault("project_snapshot", {
-            "status":"", "days_remaining":0, "title":"", "description":"",
-            "donut_percentage":0, "tags":[]
-        })
-        proj.setdefault("project_status", {
-            "counts":{"active":0,"on_hold":0,"stopped":0},
-            "projects":[]
-        })
+        proj.setdefault("projects", [])  # Array of project objects
         proj.setdefault("impact_points", {"total":"", "change":"", "note":""})
         proj.setdefault("total_budget", {"amount":"", "change":"", "note":""})
         proj.setdefault("next_deadline", {"label":"", "date":""})
@@ -486,8 +481,7 @@ def extract_cv_data(cv_text: str) -> dict:
             "profile": schema_hint["profile"],
             "publications": {"publications": []},
             "projects": {
-                "project_snapshot": {"status":"", "days_remaining":0, "title":"", "description":"", "donut_percentage":0, "tags":[]},
-                "project_status": {"counts":{"active":0,"on_hold":0,"stopped":0}, "projects":[]},
+                "projects": [],  # ✅ NEW: empty array
                 "impact_points": {"total":"", "change":"", "note":""},
                 "total_budget": {"amount":"", "change":"", "note":""},
                 "next_deadline": {"label":"", "date":""},
@@ -638,7 +632,7 @@ _DOI_RE = re.compile(r'\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b', re.I)
 def normalize_title(t: str) -> str:
     """Lowercase, strip accents, collapse spaces, drop punctuation, trim subtitles."""
     if not t: return ""
-    # remove subtitles after colon/dash to handle “Main title: subtitle”
+    # remove subtitles after colon/dash to handle "Main title: subtitle"
     t = _TITLE_SPLIT.split(t, 1)[0]
     t = unicodedata.normalize("NFKD", t)
     t = "".join(ch for ch in t if not unicodedata.combining(ch))

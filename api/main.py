@@ -215,28 +215,33 @@ def _norm_profile(p: dict | None, *, photo_url_default: str = "") -> dict:
     }
 
 def _norm_projects(p: dict | None) -> dict:
+    """✅ NEW: Normalize projects to array structure."""
     p = p or {}
+    
+    # Default structure with projects array
     out = {
-        "project_snapshot": {"status": "", "days_remaining": 0, "title": "", "description": "", "donut_percentage": 0, "tags": []},
-        "project_status": {"counts": {"active": 0, "on_hold": 0, "stopped": 0}, "projects": []},
+        "projects": [],  # ✅ NEW: Array of project objects
         "impact_points": {"total": "", "change": "", "note": ""},
         "total_budget": {"amount": "", "change": "", "note": ""},
         "next_deadline": {"label": "", "date": ""},
         "messages": [],
         "latest_activity": [],
     }
-    # shallow merge to keep any parsed values
-    out.update(p)
-    out["project_snapshot"].update(p.get("project_snapshot") or {})
-    out["project_status"].update(p.get("project_status") or {})
-    out["project_status"]["counts"].update((p.get("project_status") or {}).get("counts") or {})
+    
+    # Merge incoming data
+    if "projects" in p and isinstance(p["projects"], list):
+        out["projects"] = p["projects"]
+    
+    # Preserve other fields
     out["impact_points"].update(p.get("impact_points") or {})
     out["total_budget"].update(p.get("total_budget") or {})
     out["next_deadline"].update(p.get("next_deadline") or {})
+    
     if p.get("messages") is not None:
         out["messages"] = p["messages"]
     if p.get("latest_activity") is not None:
         out["latest_activity"] = p["latest_activity"]
+    
     return out
 
 def _norm_grants(g: dict | None) -> dict:
@@ -324,7 +329,7 @@ async def ingest_cv(
     typed_socials = {k:v for k,v in {
         "LinkedIn": linkedin_url,
         "Google Scholar": scholar_url,
-        "X": x_url,   # we’ll remap X→Twitter in normalizer
+        "X": x_url,   # we'll remap X→Twitter in normalizer
     }.items() if v}
 
     prof_in = dict(prof or {})
@@ -341,7 +346,7 @@ async def ingest_cv(
         fallback = first_reasonable_name(text) or (cv.filename.rsplit(".", 1)[0] if cv.filename else "")
         profile["name"] = fallback.strip()
 
-    # normalize the other sections for immediate serving
+    # ✅ normalize the other sections for immediate serving
     projects_norm   = _norm_projects(parsed.get("projects"))
     grants_norm     = _norm_grants(parsed.get("grants"))
     compliance_norm = _norm_compliance(parsed.get("compliance"))
@@ -383,7 +388,7 @@ async def ingest_cv(
     ACTIVE["cv_id"] = cv_id
     ACTIVE["text"] = text
     ACTIVE["profile"] = profile
-    ACTIVE["projects"] = projects_norm
+    ACTIVE["projects"] = projects_norm  # ✅ Now with projects array
     ACTIVE["grants"] = {
         **grants_norm,
         "total_grants_awarded": {"amount": total_awarded},
@@ -632,7 +637,10 @@ def api_projects_tiles(cv_id: Optional[str] = None):
 
 @app.get("/api/projects/snapshot")
 def api_projects_snapshot(cv_id: Optional[str] = None):
-    return api_projects(cv_id).get("project_snapshot") or {}
+    """✅ UPDATED: Return first project from array or empty object."""
+    p = api_projects(cv_id)
+    projects = p.get("projects") or []
+    return projects[0] if projects else {}
 
 @app.get("/api/projects/activity")
 def api_projects_activity(cv_id: Optional[str] = None):
@@ -754,4 +762,3 @@ def api_page_save(payload: dict = Body(...)):
         ACTIVE["grants"]["available_budget"]     = {"amount": max(total_received - total_spent, 0)}
 
     return {"ok": True, "page": page, "data": ACTIVE[page]}
-
