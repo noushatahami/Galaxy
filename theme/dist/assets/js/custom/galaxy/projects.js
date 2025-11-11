@@ -6,7 +6,6 @@
   const H  = (t, c='', html='') => { const n=document.createElement(t); if(c)n.className=c; if(html!=null)n.innerHTML=html; return n; };
   const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
 
-  // DEV/PROD API base — treat localhost, 127.0.0.1, 0.0.0.0 as local
   const API = (['localhost','127.0.0.1','0.0.0.0'].includes(location.hostname))
     ? 'http://127.0.0.1:3001/api'
     : '/api';
@@ -18,14 +17,12 @@
   const fmtPct = (n) => (n==null || n==='') ? '—' : `${Number(n)}%`;
   const safeText = (v, d='—') => (v==null || v==='') ? d : v;
 
-  // --- donut driver (works with or without the global window.setSnapshotProgress) ---
   function driveDonut(percent, color){
     const p = Math.max(0, Math.min(100, Number(percent ?? 0) || 0));
     if (typeof window !== 'undefined' && typeof window.setSnapshotProgress === 'function') {
       window.setSnapshotProgress(p, color);
       return;
     }
-    // Fallback: directly manipulate the inline SVG if global helper isn't present
     const ring  = document.querySelector('.snapshot-donut-ring');
     const label = document.getElementById('snapshot_donut_pct');
     if (ring){
@@ -39,26 +36,15 @@
 
   /* ----------------------- state ----------------------- */
   let editMode = false;
-  let currentSnapshotIndex = 0; // ✅ NEW: Track which project is shown in snapshot
+  let currentSnapshotIndex = 0;
 
   const state = {
-    // tiles
     impact_points: { total: '', change: '', note: '' },
     total_budget: { amount: '', change: '', note: '' },
-
-    // ✅ projects is now an array of project objects
-    projects: [
-      // { status, days_remaining, title, description, donut_percentage, tags: [{label}] }
-    ],
-
-    // additional project data
+    projects: [],
     next_deadline: { label: '', date: '' },
-    messages: [
-      // { name, time_ago, subject }
-    ],
-    latest_activity: [
-      // { name, action, time_ago, avatar, approved }
-    ]
+    messages: [],
+    latest_activity: []
   };
 
   /* ----------------------- persistence ----------------------- */
@@ -77,19 +63,16 @@
   async function load() {
     const hasCV = !!localStorage.getItem('galaxy_cv_id');
 
-    // 1) Soft-load cache first (only if no CV present)
     const local = localStorage.getItem('galaxy_projects');
     if (local && !hasCV) {
       try { Object.assign(state, JSON.parse(local)); } catch {}
     }
 
-    // 2) Prefer unified API object (CV-backed)
     try {
       const rootResp = await fetch(`${API}/projects`);
       if (rootResp.ok) {
         const root = await rootResp.json();
 
-        // Handle impact_points
         if (root.impact_points) {
           state.impact_points = {
             total: root.impact_points.total ?? '',
@@ -98,7 +81,6 @@
           };
         }
 
-        // Handle total_budget
         if (root.total_budget) {
           state.total_budget = {
             amount: root.total_budget.amount ?? '',
@@ -107,7 +89,6 @@
           };
         }
 
-        // Handle projects array
         if (Array.isArray(root.projects)) {
           state.projects = root.projects.map(p => ({
             status: p.status || 'active',
@@ -122,7 +103,6 @@
           }));
         }
 
-        // Handle next_deadline
         if (root.next_deadline) {
           state.next_deadline = {
             label: root.next_deadline.label || '',
@@ -130,16 +110,15 @@
           };
         }
 
-        // Handle messages
         if (Array.isArray(root.messages)) {
           state.messages = root.messages.map(m => ({
             name: m.name || '',
             time_ago: m.time_ago || '',
-            subject: m.subject || ''
+            subject: m.subject || '',
+            avatar: m.avatar || ''
           }));
         }
 
-        // Handle latest_activity
         if (Array.isArray(root.latest_activity)) {
           state.latest_activity = root.latest_activity.map(a => ({
             name: a.name || '',
@@ -151,7 +130,6 @@
         }
       }
 
-      // 3) Optional granular overrides
       const [tiles, snapshot, activity, messages, deadline] = await Promise.allSettled([
         fetch(`${API}/projects/tiles`),
         fetch(`${API}/projects/snapshot`),
@@ -166,7 +144,6 @@
         if (t.budget) state.total_budget = t.budget;
       }
 
-      // Handle snapshot as a single project
       if (snapshot.status==='fulfilled' && snapshot.value.ok) {
         const snap = await snapshot.value.json();
         if (snap && Object.keys(snap).length > 0) {
@@ -201,7 +178,6 @@
       }
     } catch {}
 
-    // 4) Static fallback
     if (!state.projects?.length) {
       try {
         const r = await fetch('data/projects.json', { cache:'no-store' });
@@ -232,13 +208,13 @@
     const cA = $('#count_active');
     const cH = $('#count_on_hold');
     const cS = $('#count_stopped');
-    const cC = $('#count_completed');
     if (!wrap) return;
 
     wrap.innerHTML = '';
     const list = state.projects || [];
+    
     if (!list.length) {
-      wrap.innerHTML = '<div class="text-gray-400">—</div>';
+      wrap.innerHTML = '<div class="col-12"><div class="empty-state"><i class="ki-duotone ki-folder"><span class="path1"></span><span class="path2"></span></i><div>No projects yet</div></div></div>';
     } else {
       list.forEach((p, index) => {
         const statusColors = {
@@ -247,31 +223,23 @@
           'stopped': '#A0A0A0',
           'completed': '#4A90E2'
         };
-        const dot = statusColors[p.status] || '#20E3B2';
+        const dotColor = statusColors[p.status] || '#20E3B2';
+        
         const col = H('div','col-sm-6','');
+        const projectItem = H('div','project-item','');
+        projectItem.innerHTML = `
+          <span class="project-status-dot" style="background:${dotColor}"></span>
+          <div class="info-list-item-content">
+            <div class="info-list-item-text">${safeText(p.title,'Untitled')}</div>
+          </div>
+        `;
         
-        // ✅ NEW: Make project clickable
-        const projectDiv = H('div','px-3 py-2 rounded bg-body-secondary', 
-          `<span style="color:${dot}">●</span> ${safeText(p.title,'Untitled')}`
-        );
-        projectDiv.style.cursor = 'pointer';
-        projectDiv.style.transition = 'all 0.2s ease';
-        
-        // Hover effect
-        projectDiv.addEventListener('mouseenter', () => {
-          projectDiv.style.backgroundColor = 'rgba(255,255,255,0.15)';
-        });
-        projectDiv.addEventListener('mouseleave', () => {
-          projectDiv.style.backgroundColor = '';
-        });
-        
-        // ✅ NEW: Click to show in snapshot
-        projectDiv.addEventListener('click', () => {
+        projectItem.addEventListener('click', () => {
           currentSnapshotIndex = index;
           renderSnapshot();
         });
         
-        col.appendChild(projectDiv);
+        col.appendChild(projectItem);
         wrap.appendChild(col);
       });
     }
@@ -279,16 +247,13 @@
     const active    = list.filter(p=>p.status==='active').length;
     const onHold    = list.filter(p=>p.status==='on_hold').length;
     const stopped   = list.filter(p=>p.status==='stopped').length;
-    const completed = list.filter(p=>p.status==='completed').length;
     
     if (cA) cA.textContent = `(${active})`;
     if (cH) cH.textContent = `(${onHold})`;
     if (cS) cS.textContent = `(${stopped})`;
-    if (cC) cC.textContent = `(${completed})`;
   }
 
   function renderSnapshot() {
-    // ✅ Get the project at currentSnapshotIndex
     const projects = state.projects || [];
     const s = projects[currentSnapshotIndex] || {};
 
@@ -299,7 +264,6 @@
     const ds  = $('#snapshot_desc');
     const tg  = $('#snapshot_tags');
 
-    // Status color mapping
     const statusColors = {
       'active': '#20E3B2',
       'on_hold': '#F5A623',
@@ -308,7 +272,7 @@
     };
     const statusColor = statusColors[s.status] || '#20E3B2';
 
-    if (dot) dot.style.color = statusColor;
+    if (dot) dot.style.background = statusColor;
     if (st)  st.textContent  = safeText(s.status);
     if (sd)  sd.textContent  = Number(s.days_remaining||0);
     if (tt)  tt.textContent  = safeText(s.title);
@@ -323,13 +287,12 @@
         arr.forEach(t => {
           const label = typeof t === 'string' ? t : (t.label || '');
           if (label) {
-            tg.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', label));
+            tg.appendChild(H('span','pill me-1 mb-1', label));
           }
         });
       }
     }
 
-    // Drive the donut SVG
     if (s.donut_percentage == null || s.donut_percentage === '') {
       driveDonut(0, statusColor);
       const label = document.getElementById('snapshot_donut_pct');
@@ -345,26 +308,25 @@
     
     list.innerHTML = '';
     const items = state.latest_activity || [];
+    
     if (!items.length) {
-      list.appendChild(H('div','text-gray-400','—'));
+      list.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-notification-status"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i><div>No recent activity</div></div>';
       return;
     }
     
     items.forEach(i => {
-      const row = H('div','d-flex align-items-center justify-content-between','');
-      row.innerHTML = `
-        <div class="d-flex align-items-center gap-3">
-          <div class="symbol symbol-35px">
-            <img src="${i.avatar || 'assets/media/avatars/blank.png'}" alt="">
-          </div>
-          <div>
-            <div class="fw-semibold">${safeText(i.name,'—')}</div>
-            <div class="text-gray-300 fs-8">${safeText(i.action,'')}</div>
-          </div>
+      const item = H('div','activity-item','');
+      item.innerHTML = `
+        <div class="activity-avatar">
+          <img src="${i.avatar || 'assets/media/avatars/blank.png'}" alt="">
+        </div>
+        <div class="activity-content">
+          <div class="activity-name">${safeText(i.name,'—')}</div>
+          <div class="activity-action">${safeText(i.action,'')}</div>
         </div>
         <span class="text-gray-500 fs-8">${safeText(i.time_ago,'')}</span>
       `;
-      list.appendChild(row);
+      list.appendChild(item);
     });
   }
 
@@ -374,21 +336,26 @@
     
     first.innerHTML = '';
     const msgs = state.messages || [];
+    
     if (!msgs.length) {
-      first.appendChild(H('div','text-gray-400','—'));
+      first.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-text-2"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i><div>No messages</div></div>';
       return;
     }
     
     const m = msgs[0];
-    const card = H('div','d-flex align-items-center gap-3','');
+    const card = H('div','message-card','');
     card.innerHTML = `
-      <div class="symbol symbol-35px">
-        <img src="${m.avatar || 'assets/media/avatars/blank.png'}" alt="">
+      <div class="message-header">
+        <div class="message-avatar">
+          <img src="${m.avatar || 'assets/media/avatars/blank.png'}" alt="">
+        </div>
+        <div class="message-sender">
+          <div class="message-name">${safeText(m.name,'—')}</div>
+          <div class="message-time">${safeText(m.time_ago,'')}</div>
+        </div>
       </div>
-      <div>
-        <div class="fw-semibold">${safeText(m.name,'—')}</div>
-        <div class="text-gray-300 fs-8">${safeText(m.subject,'')}</div>
-      </div>`;
+      <div class="message-body">${safeText(m.subject,'')}</div>
+    `;
     first.appendChild(card);
   }
 
@@ -578,7 +545,7 @@
     const list = H('div','d-flex flex-column gap-4','');
 
     const row = (proj = {}) => {
-      const r = H('div','p-3 rounded border border-white border-opacity-10 bg-white bg-opacity-5','');
+      const r = H('div','p-4 rounded border border-white border-opacity-10 bg-white bg-opacity-5','');
       const tags = (proj.tags || []).map(t => typeof t === 'string' ? t : (t.label || '')).join(', ');
       
       r.innerHTML = `
@@ -612,13 +579,12 @@
             <label class="form-label fw-bold">Tags (comma-separated)</label>
             <input class="form-control proj-tags" placeholder="NLP, Genomics, AI" value="${tags}">
           </div>
-          <div class="col-md-12">
+          <div class="col-md-12 mt-4">
             <button class="btn btn-light-danger w-100">Remove Project</button>
           </div>
         </div>
       `;
       
-      // ✅ NEW: Remove button is now under the project box
       on(r.querySelector('.btn-light-danger'),'click',()=>r.remove());
       return r;
     };
@@ -633,7 +599,7 @@
 
     const onSave = () => {
       const arr = [];
-      list.querySelectorAll(':scope > div.p-3').forEach(r=>{
+      list.querySelectorAll(':scope > div.p-4').forEach(r=>{
         const title = r.querySelector('.proj-title').value.trim();
         const description = r.querySelector('.proj-desc').value.trim();
         const status = r.querySelector('.proj-status').value;
@@ -660,12 +626,10 @@
   }
 
   function buildSnapshotModal() {
-    // ✅ Edit the project at currentSnapshotIndex
     const {wrap, box} = section('Project Snapshot (Currently Viewing)');
     const s = (state.projects && state.projects[currentSnapshotIndex]) ? state.projects[currentSnapshotIndex] : {};
     const tags = (s.tags || []).map(t => typeof t === 'string' ? t : (t.label || '')).join(', ');
     
-    // Status color mapping
     const statusColors = {
       'active': '#20E3B2',
       'on_hold': '#F5A623',
@@ -728,7 +692,6 @@
         donut_percentage: donutVal === '' ? null : Number(donutVal)
       };
       
-      // Update the project at currentSnapshotIndex
       if (!state.projects) state.projects = [];
       if (currentSnapshotIndex >= state.projects.length) {
         state.projects.push(updatedProject);
@@ -830,7 +793,8 @@
           arr.push({ 
             name, 
             subject,
-            time_ago: ''
+            time_ago: '',
+            avatar: ''
           });
         }
       });

@@ -159,7 +159,7 @@
     state.keywords = [...set].slice(0, 30);
   }
 
-  /* ----------------------- NEW: Compliance-Style Chart ----------------------- */
+  /* ----------------------- enhanced renderers ----------------------- */
   function renderGrantsSummary() {
     const totalAwarded  = sum(state.grants.map(g=>amountAwarded(g)));
     const totalReceived = sum(state.grants.map(g=>amountReceived(g)));
@@ -174,19 +174,18 @@
 
     if(donutPath && percentText){
       const percent = totalReceived > 0 ? Math.min(100, Math.round((totalSpent / totalReceived) * 100)) : 0;
-      const circumference = 402; // 2 * π * 64
+      const circumference = 402;
       const filled = (percent / 100) * circumference;
 
       donutPath.setAttribute('stroke-dasharray', `${filled} ${circumference}`);
       percentText.textContent = `${percent}%`;
 
-      // Color coding based on spending level
       if(percent >= 90) {
-        donutPath.setAttribute('stroke', '#ef4444'); // Red
+        donutPath.setAttribute('stroke', '#ef4444');
       } else if(percent >= 70) {
-        donutPath.setAttribute('stroke', '#f59e0b'); // Amber
+        donutPath.setAttribute('stroke', '#f59e0b');
       } else {
-        donutPath.setAttribute('stroke', '#22c55e'); // Green
+        donutPath.setAttribute('stroke', '#22c55e');
       }
     }
 
@@ -213,7 +212,6 @@
     }
   }
 
-  /* ----------------------- renderers ----------------------- */
   function renderTotals() {
     const totalEl = $('#total_grants_awarded');
     const availEl = $('#available_budget');
@@ -227,7 +225,7 @@
     if (!tbody) return;
 
     if (!state.grants?.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-gray-400">No grants found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i class="ki-duotone ki-information-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No grants found</div></td></tr>';
       if (countBadge) countBadge.textContent = '0 grants';
       return;
     }
@@ -240,13 +238,28 @@
       const spent = amountSpent(g);
 
       return `<tr class="grant-row" data-index="${idx}">
-        <td>${g.title || '—'}</td>
-        <td>${g.agency || '—'}</td>
-        <td class="text-end">${fmtMoney(awarded)}</td>
-        <td class="text-end">${fmtMoney(received)}</td>
-        <td class="text-end">${fmtMoney(spent)}</td>
+        <td>
+          <div class="grant-cell-title">${g.title || '—'}</div>
+          <div class="grant-cell-meta">${g.id || g.grantId || 'No ID'}</div>
+        </td>
+        <td>
+          <div class="grant-cell-agency">${g.agency || '—'}</div>
+          <div class="grant-cell-type">${g.type || 'Not specified'}</div>
+        </td>
+        <td>
+          <div class="grant-amount-primary">${fmtMoneyShort(awarded)}</div>
+          <div class="grant-amount-label">Awarded</div>
+        </td>
+        <td>
+          <div class="grant-amount-primary">${fmtMoneyShort(received)}</div>
+          <div class="grant-amount-label">Received</div>
+        </td>
+        <td>
+          <div class="grant-amount-primary">${fmtMoneyShort(spent)}</div>
+          <div class="grant-amount-label">Spent</div>
+        </td>
         <td class="text-center">
-          <span class="badge ${received > 0 ? 'badge-light-success' : 'badge-light-secondary'}">${received > 0 ? 'Active' : 'Pending'}</span>
+          <span class="grant-status-badge ${received > 0 ? 'grant-status-active' : 'grant-status-pending'}">${received > 0 ? 'Active' : 'Pending'}</span>
         </td>
       </tr>`;
     }).join('');
@@ -255,68 +268,126 @@
   }
 
   function renderLastAwarded() {
-    const ul = $('#last_awarded_grant'); if (!ul) return;
-    ul.innerHTML = '';
+    const container = $('#last_awarded_grant'); 
+    if (!container) return;
+    
+    container.className = 'grant-detail-list';
+    container.innerHTML = '';
+    
     const g = state.lastAwarded;
-    if (!g) { ul.innerHTML = '<li class="text-gray-400">—</li>'; return; }
+    if (!g) { 
+      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-award d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No awarded grants yet</div>'; 
+      return; 
+    }
+
     const rows = [
-      ['Title', g.title],
-      ['Grant ID', g.id || g.grantId],
-      ['Agency', g.agency],
-      ['Type', g.type],
-      ['Duration', g.duration],
-      ['Amount Awarded', fmtMoney(amountAwarded(g))],
-      ['Amount Received', fmtMoney(amountReceived(g))],
-      ['Amount Spent', fmtMoney(amountSpent(g))],
-      ['Awarded', g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'],
-      ['Tags', (g.tags||g.keywords||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ')]
+      { icon: 'ki-document', label: 'Title', value: g.title },
+      { icon: 'ki-tag', label: 'Grant ID', value: g.id || g.grantId },
+      { icon: 'ki-office-bag', label: 'Agency', value: g.agency },
+      { icon: 'ki-category', label: 'Type', value: g.type },
+      { icon: 'ki-time', label: 'Duration', value: g.duration },
+      { icon: 'ki-dollar', label: 'Amount Awarded', value: fmtMoney(amountAwarded(g)) },
+      { icon: 'ki-wallet', label: 'Amount Received', value: fmtMoney(amountReceived(g)) },
+      { icon: 'ki-chart-simple', label: 'Amount Spent', value: fmtMoney(amountSpent(g)) },
+      { icon: 'ki-calendar', label: 'Awarded', value: g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—' }
     ];
-    rows.forEach(([k,v]) => {
-      const li = H('li','', `<strong>${k}:</strong> ${v!=null && v!=='' ? v : '—'}`);
-      ul.appendChild(li);
+
+    rows.forEach(({icon, label, value}) => {
+      const item = H('div', 'grant-detail-item');
+      item.innerHTML = `
+        <div class="grant-detail-icon">
+          <i class="ki-duotone ${icon} fs-3"><span class="path1"></span><span class="path2"></span></i>
+        </div>
+        <div class="grant-detail-content">
+          <div class="grant-detail-label">${label}</div>
+          <div class="grant-detail-value">${value != null && value !== '' ? value : '—'}</div>
+        </div>
+      `;
+      container.appendChild(item);
     });
+
+    // Tags section
+    if ((g.tags||g.keywords||[]).length > 0) {
+      const tagsItem = H('div', 'grant-detail-item');
+      tagsItem.innerHTML = `
+        <div class="grant-detail-icon">
+          <i class="ki-duotone ki-tag fs-3"><span class="path1"></span><span class="path2"></span></i>
+        </div>
+        <div class="grant-detail-content">
+          <div class="grant-detail-label">Tags</div>
+          <div class="grant-detail-value grant-tags-wrap">
+            ${(g.tags||g.keywords||[]).map(t => `<span class="pill">${t}</span>`).join('')}
+          </div>
+        </div>
+      `;
+      container.appendChild(tagsItem);
+    }
   }
 
   function renderBreakdown() {
-    const wrap = $('#breakdown'); if (!wrap) return;
+    const wrap = $('#breakdown'); 
+    if (!wrap) return;
+    
     wrap.innerHTML = '';
     const b = state.breakdown;
     const cats = b?.categories || [];
-    if (!cats.length) { wrap.textContent = '—'; return; }
+    
+    if (!cats.length) { 
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-chart-pie-simple d-block"><span class="path1"></span><span class="path2"></span></i>No breakdown data</div>'; 
+      return; 
+    }
+    
     const total = b.total || sum(cats.map(c=>Number(c.value)||0)) || 1;
+    
     cats.forEach(c => {
       const val = Number(c.value)||0;
       const pct = Math.round((val/total)*100);
-      const row = H('div','mb-3','');
+      const row = H('div','breakdown-item');
       row.innerHTML = `
-        <div class="d-flex justify-content-between">
-          <span class="text-gray-300">${c.label || '—'}</span>
-          <span class="text-gray-300">${fmtMoney(val)} · ${pct}%</span>
+        <div class="breakdown-header">
+          <span class="breakdown-label">${c.label || '—'}</span>
+          <span class="breakdown-value">
+            <span class="breakdown-amount">${fmtMoneyShort(val)}</span>
+            <span class="breakdown-percent">${pct}%</span>
+          </span>
         </div>
-        <div class="h-6px bg-light rounded">
-          <div class="h-6px bg-primary rounded" style="width:${pct}%"></div>
+        <div class="breakdown-bar-bg">
+          <div class="breakdown-bar-fill" style="width:${pct}%"></div>
         </div>`;
       wrap.appendChild(row);
     });
   }
 
   function renderReports() {
-    const gid  = $('#reports_grant_id');
-    const due  = $('#reports_next_due');
-    const last = $('#reports_last_submitted');
+    const container = $('#reports_container');
+    if (!container) return;
+    
     const r = state.reports || {};
-    if (gid)  gid.textContent  = r.grantId ? String(r.grantId) : '—';
-    if (due)  due.textContent  = r.nextDue || '—';
-    if (last) last.textContent = r.lastSubmitted || '—';
+    
+    const grantCard = container.querySelector('.report-stat-card:nth-child(1) .report-stat-value');
+    const dueCard = container.querySelector('.report-stat-card:nth-child(2) .report-stat-value');
+    const lastCard = container.querySelector('.report-stat-card:nth-child(3) .report-stat-value');
+    
+    if (grantCard) grantCard.textContent = r.grantId ? String(r.grantId) : '—';
+    if (dueCard) dueCard.textContent = r.nextDue || '—';
+    if (lastCard) lastCard.textContent = r.lastSubmitted || '—';
   }
 
   function renderKeywords() {
-    const wrap = $('#keywords_section'); if (!wrap) return;
+    const wrap = $('#keywords_section'); 
+    if (!wrap) return;
+    
     wrap.innerHTML = '';
+    
     if (!state.keywords?.length) {
-      wrap.appendChild(H('span','badge bg-success bg-opacity-20 text-success','—')); return;
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-tag d-block"><span class="path1"></span><span class="path2"></span></i>No keywords yet</div>';
+      return;
     }
-    state.keywords.forEach(k => wrap.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', k)));
+    
+    state.keywords.forEach(k => {
+      const pill = H('span','pill', k);
+      wrap.appendChild(pill);
+    });
   }
 
   function renderAll() {
@@ -326,49 +397,80 @@
     renderBreakdown();
     renderReports();
     renderKeywords();
-    renderGrantsSummary(); // ✅ ADD CHART RENDER
+    renderGrantsSummary();
     reflectEditMode();
   }
 
   /* ----------------------- grant details popup ----------------------- */
   function buildGrantDetailsView(g) {
-    const wrap = H('div','', '');
-    const grid = H('div','row g-4','');
-
-    const cell = (label, valueHtml) => {
-      const c = H('div','col-md-6','');
-      c.innerHTML = `
-        <div class="fw-semibold text-gray-500 mb-1">${label}</div>
-        <div class="fs-6">${valueHtml}</div>`;
-      return c;
-    };
-
-    const badgeList = (arr=[]) =>
-      (arr||[]).map(t => `<span class="badge bg-success bg-opacity-20 text-success me-1 mb-1">${t}</span>`).join(' ') || '—';
-
+    const wrap = H('div','grant-details-view');
+    
     const awarded  = amountAwarded(g);
     const received = amountReceived(g);
     const spent    = amountSpent(g);
-    const status   = received > 0 ? '<span class="badge badge-light-success">Active</span>' :
-                                    '<span class="badge badge-light-secondary">Pending</span>';
+    const status   = received > 0 ? 'Active' : 'Pending';
+    const statusClass = received > 0 ? 'grant-status-active' : 'grant-status-pending';
 
-    grid.appendChild(cell('Title', g.title ? String(g.title) : '—'));
-    grid.appendChild(cell('Grant ID', g.id || g.grantId || '—'));
-    grid.appendChild(cell('Agency', g.agency || '—'));
-    grid.appendChild(cell('Type', g.type || '—'));
-    grid.appendChild(cell('Duration', g.duration || '—'));
-    grid.appendChild(cell('Status', status));
-    grid.appendChild(cell('Amount Awarded', fmtMoney(awarded)));
-    grid.appendChild(cell('Amount Received', fmtMoney(received)));
-    grid.appendChild(cell('Amount Spent', fmtMoney(spent)));
-    grid.appendChild(cell('Awarded Date', g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'));
-    grid.appendChild(cell('Tags', badgeList(g.tags || g.keywords)));
+    wrap.innerHTML = `
+      <div class="grant-details-header">
+        <h4 class="grant-details-title">${g.title || 'Untitled Grant'}</h4>
+        <span class="grant-status-badge ${statusClass}">${status}</span>
+      </div>
+      
+      <div class="grant-details-grid">
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Grant ID</div>
+          <div class="grant-detail-cell-value">${g.id || g.grantId || '—'}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Agency</div>
+          <div class="grant-detail-cell-value">${g.agency || '—'}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Type</div>
+          <div class="grant-detail-cell-value">${g.type || '—'}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Duration</div>
+          <div class="grant-detail-cell-value">${g.duration || '—'}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Amount Awarded</div>
+          <div class="grant-detail-cell-value grant-detail-amount">${fmtMoney(awarded)}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Amount Received</div>
+          <div class="grant-detail-cell-value grant-detail-amount">${fmtMoney(received)}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Amount Spent</div>
+          <div class="grant-detail-cell-value grant-detail-amount">${fmtMoney(spent)}</div>
+        </div>
+        <div class="grant-detail-cell">
+          <div class="grant-detail-cell-label">Awarded Date</div>
+          <div class="grant-detail-cell-value">${g.awardedAt ? new Date(g.awardedAt).toLocaleDateString() : '—'}</div>
+        </div>
+      </div>
+      
+      ${(g.tags||g.keywords||[]).length > 0 ? `
+        <div class="grant-details-section">
+          <div class="grant-details-section-title">Tags</div>
+          <div class="grant-tags-wrap">
+            ${(g.tags||g.keywords||[]).map(t => `<span class="pill">${t}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      
+      ${g.url || g.link ? `
+        <div class="grant-details-section">
+          <a href="${g.url || g.link}" class="btn btn-light-primary" target="_blank" rel="noopener">
+            <i class="ki-duotone ki-arrow-up-right"><span class="path1"></span><span class="path2"></span></i>
+            Open Grant Link
+          </a>
+        </div>
+      ` : ''}
+    `;
 
-    if (g.url || g.link) {
-      grid.appendChild(cell('Link', `<a href="${g.url || g.link}" class="btn btn-sm btn-light-primary" target="_blank" rel="noopener">Open link</a>`));
-    }
-
-    wrap.appendChild(grid);
     return wrap;
   }
 
@@ -435,7 +537,7 @@
       { anchor:'#grants_tbody',         title:'Edit All Grants',   build: buildAllGrantsModal },
       { anchor:'#last_awarded_grant',   title:'Edit Last Awarded', build: buildLastAwardedModal },
       { anchor:'#breakdown',            title:'Edit Breakdown',    build: buildBreakdownModal },
-      { anchor:'#reports_grant_id',     title:'Edit Reports',      build: buildReportsModal },
+      { anchor:'#reports_container',    title:'Edit Reports',      build: buildReportsModal },
       { anchor:'#keywords_section',     title:'Edit Keywords',     build: buildKeywordsModal },
     ];
     cfgs.forEach(cfg => {
@@ -497,7 +599,7 @@
         keywords:            state.keywords  || []
       });
       save();
-      renderAll(); // ✅ THIS NOW INCLUDES CHART
+      renderAll();
       window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
       bsModal.hide();
     });
@@ -731,7 +833,7 @@
     await load();
     ensureTinyButtons();
     wireEditToggle();
-    renderAll(); // ✅ INCLUDES CHART
+    renderAll();
     window.dispatchEvent(new CustomEvent('galaxy:grants:updated'));
   });
 })();

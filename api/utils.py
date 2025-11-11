@@ -4,14 +4,34 @@ from pypdf import PdfReader
 from rapidfuzz import fuzz, process
 import io, re, requests, os, json
 from dotenv import load_dotenv
+from google import genai
 from openai import OpenAI
 import json, textwrap
 
 load_dotenv()
 
-# --- Initialize OpenAI client safely ---
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# --- Initialize Gemini (primary) ---
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+client_genai = None
+if GOOGLE_API_KEY:
+    try:
+        client_genai = genai.Client(api_key=GOOGLE_API_KEY)
+        print("✓ Gemini API configured")
+    except Exception as e:
+        print(f"⚠️ Gemini init failed: {e}")
+
+# --- Keep OpenAI as backup ---
+OPENAI_KEY = os.getenv("OPENAI_API_KEY")
+client = None
 GPT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-nano")
+
+if OPENAI_KEY:
+    try:
+        client = OpenAI(api_key=OPENAI_KEY)
+        print("✓ OpenAI configured (backup)")
+    except Exception as e:
+        print(f"⚠️ OpenAI init failed: {e}")
+        client = None
 
 # --- Title → AI keywords -----------------------------------------------------
 def ai_keywords_from_titles(titles: list[str], max_keywords: int = 7) -> dict[str, list[str]]:
@@ -37,22 +57,27 @@ def ai_keywords_from_titles(titles: list[str], max_keywords: int = 7) -> dict[st
     user_payload = {"items": [{"title": t} for t in titles], "max_keywords": max_keywords}
 
     try:
-        completion = client.chat.completions.create(
-            model=GPT_MODEL,
-            temperature=0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-            ],
+        if not client_genai:
+            return {}
+        
+        prompt = f"{system_msg}\n\n{json.dumps(user_payload, ensure_ascii=False)}"
+        
+        response = client_genai.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config={
+                "temperature": 0,
+                "response_mime_type": "application/json"
+            }
         )
-        raw = completion.choices[0].message.content
+        
+        raw = response.text
         data = json.loads(raw or "{}")
         out: dict[str, list[str]] = {}
+        
         for item in (data.get("items") or []):
             title = (item.get("title") or "").strip()
             kws = item.get("keywords") or []
-            # normalize keywords: strings only, strip, lowercase, de-dupe, max N
             clean: list[str] = []
             seen = set()
             for k in kws:
@@ -71,7 +96,6 @@ def ai_keywords_from_titles(titles: list[str], max_keywords: int = 7) -> dict[st
                 out[title] = clean
         return out
     except Exception as e:
-        # Keep server robust; caller will fall back to rule-based tags
         print("ai_keywords_from_titles error:", repr(e))
         return {}
 
@@ -249,13 +273,19 @@ def extract_cv_data(cv_text: str) -> dict:
     )
 
     try:
-        completion = client.chat.completions.create(
-            model=GPT_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            response_format={"type": "json_object"}
+        if not client_genai:
+            raise Exception("Gemini client not initialized")
+        
+        response = client_genai.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config={
+                "temperature": 0,
+                "response_mime_type": "application/json"
+            }
         )
-        data = completion.choices[0].message.content
+        
+        data = response.text
         parsed = json.loads(data)
 
         # -------- Normalize: ensure all keys exist so the UI never sees undefined --------
@@ -475,7 +505,7 @@ def extract_cv_data(cv_text: str) -> dict:
         return parsed
 
     except Exception as e:
-        print("OpenAI extraction error:", e)
+        print("Gemini extraction error:", e)
         # Return full default shape so pages still render empty but valid
         return {
             "profile": schema_hint["profile"],
