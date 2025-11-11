@@ -298,7 +298,7 @@
 							<div id="kt_app_content_container" class="app-container container-fluid">
 
 								<style>
-								/* Enhanced card styling - monochrome, no 3D lift */
+								/* Enhanced card styling */
 								.card-3d{
 									border:1px solid rgba(255,255,255,.12);
 									background:linear-gradient(135deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,.03) 100%);
@@ -347,7 +347,6 @@
 									padding: 1.75rem;
 								}
 
-								/* Subtle glow on hover */
 								.card-3d::after {
 									content: '';
 									position: absolute;
@@ -366,7 +365,7 @@
 									opacity: 1;
 								}
 
-								/* ===== COMPLIANCE-STYLE BREAKDOWN ===== */
+								/* Breakdown Chart */
 								.donut-wrap {
 									position: relative;
 									width: 160px;
@@ -440,16 +439,284 @@
 									width: 100%;
 									margin: 0 auto;
 								}
-								
-								/* Editable cells */
-								.editable-cell { cursor: pointer; position: relative; }
-								.editable-cell:hover { background: rgba(255,255,255,.05); }
-								.editable-cell input { 
-									width: 100%; 
-									border: 1px solid #4caf50; 
-									background: rgba(76,175,80,.1); 
-									padding: 4px 8px; 
-									border-radius: 4px; 
+
+								/* Grant table enhanced styling */
+								.grant-row {
+									cursor: pointer;
+									transition: all .2s ease;
+								}
+
+								.grant-row:hover {
+									background: rgba(255,255,255,.05) !important;
+								}
+
+								.grant-cell-title {
+									font-weight: 600;
+									font-size: 0.95rem;
+									color: rgba(255,255,255,.95);
+									margin-bottom: 4px;
+								}
+
+								.grant-cell-meta {
+									font-size: 0.8rem;
+									color: rgba(255,255,255,.5);
+								}
+
+								.grant-cell-agency {
+									font-weight: 500;
+									margin-bottom: 4px;
+								}
+
+								.grant-cell-type {
+									font-size: 0.8rem;
+									color: rgba(255,255,255,.5);
+								}
+
+								.grant-amount-primary {
+									font-weight: 600;
+									font-size: 0.95rem;
+								}
+
+								.grant-amount-label {
+									font-size: 0.75rem;
+									color: rgba(255,255,255,.5);
+									text-transform: uppercase;
+									letter-spacing: 0.05em;
+								}
+
+								.grant-status-badge {
+									padding: 6px 14px;
+									border-radius: 6px;
+									font-size: 0.8rem;
+									font-weight: 600;
+									text-transform: uppercase;
+									letter-spacing: 0.05em;
+								}
+
+								.grant-status-active {
+									background: rgba(34, 197, 94, 0.15);
+									color: #22c55e;
+								}
+
+								.grant-status-pending {
+									background: rgba(156, 163, 175, 0.15);
+									color: #9ca3af;
+								}
+
+								/* Grant detail list */
+								.grant-detail-list {
+									display: flex;
+									flex-direction: column;
+									gap: 0.75rem;
+								}
+
+								.grant-detail-item {
+									display: flex;
+									gap: 1rem;
+									align-items: flex-start;
+									padding: 0.75rem;
+									border-radius: 8px;
+									background: rgba(255,255,255,.03);
+									border: 1px solid rgba(255,255,255,.08);
+									transition: all .2s ease;
+								}
+
+								.grant-detail-item:hover {
+									background: rgba(255,255,255,.06);
+									border-color: rgba(255,255,255,.12);
+								}
+
+								.grant-detail-icon {
+									flex-shrink: 0;
+									width: 40px;
+									height: 40px;
+									display: flex;
+									align-items: center;
+									justify-content: center;
+									background: rgba(255,255,255,.08);
+									border-radius: 8px;
+								}
+
+								.grant-detail-content {
+									flex: 1;
+								}
+
+								.grant-detail-label {
+									font-size: 0.75rem;
+									color: rgba(255,255,255,.6);
+									text-transform: uppercase;
+									letter-spacing: 0.05em;
+									margin-bottom: 4px;
+								}
+
+								.grant-detail-value {
+									font-size: 0.95rem;
+									font-weight: 500;
+								}
+
+								.grant-tags-wrap {
+									display: flex;
+									flex-wrap: wrap;
+									gap: 6px;
+								}
+
+								/* Breakdown items */
+								.breakdown-item {
+									margin-bottom: 1rem;
+								}
+
+								.breakdown-header {
+									display: flex;
+									justify-content: space-between;
+									align-items: center;
+									margin-bottom: 8px;
+								}
+
+								.breakdown-label {
+									font-weight: 500;
+									font-size: 0.9rem;
+								}
+
+								.breakdown-value {
+									display: flex;
+									gap: 12px;
+									align-items: center;
+								}
+
+								.breakdown-amount {
+									font-weight: 600;
+								}
+
+								.breakdown-percent {
+									font-size: 0.85rem;
+									color: rgba(255,255,255,.6);
+								}
+
+								.breakdown-bar-bg {
+									height: 8px;
+									border-radius: 999px;
+									background: rgba(255,255,255,.12);
+									overflow: hidden;
+								}
+
+								.breakdown-bar-fill {
+									height: 100%;
+									background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
+									border-radius: 999px;
+									transition: width .6s ease;
+								}
+
+								/* Report stats */
+								.report-stat-card {
+									padding: 1rem;
+									border-radius: 12px;
+									background: rgba(255,255,255,.03);
+									border: 1px solid rgba(255,255,255,.08);
+									margin-bottom: 0.75rem;
+								}
+
+								.report-stat-label {
+									font-size: 0.75rem;
+									color: rgba(255,255,255,.6);
+									text-transform: uppercase;
+									letter-spacing: 0.05em;
+									margin-bottom: 8px;
+								}
+
+								.report-stat-value {
+									font-size: 1.1rem;
+									font-weight: 600;
+								}
+
+								/* Grant details modal view */
+								.grant-details-view {
+									padding: 1rem 0;
+								}
+
+								.grant-details-header {
+									display: flex;
+									justify-content: space-between;
+									align-items: flex-start;
+									margin-bottom: 2rem;
+									padding-bottom: 1.5rem;
+									border-bottom: 1px solid rgba(255,255,255,.1);
+								}
+
+								.grant-details-title {
+									font-size: 1.5rem;
+									font-weight: 700;
+									margin: 0;
+								}
+
+								.grant-details-grid {
+									display: grid;
+									grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+									gap: 1.5rem;
+									margin-bottom: 2rem;
+								}
+
+								.grant-detail-cell {
+									padding: 1rem;
+									border-radius: 12px;
+									background: rgba(255,255,255,.03);
+									border: 1px solid rgba(255,255,255,.08);
+								}
+
+								.grant-detail-cell-label {
+									font-size: 0.75rem;
+									color: rgba(255,255,255,.6);
+									text-transform: uppercase;
+									letter-spacing: 0.05em;
+									margin-bottom: 8px;
+								}
+
+								.grant-detail-cell-value {
+									font-size: 1rem;
+									font-weight: 500;
+								}
+
+								.grant-detail-amount {
+									font-size: 1.2rem;
+									font-weight: 700;
+									color: #3b82f6;
+								}
+
+								.grant-details-section {
+									margin-top: 2rem;
+								}
+
+								.grant-details-section-title {
+									font-size: 0.85rem;
+									font-weight: 600;
+									text-transform: uppercase;
+									letter-spacing: 0.05em;
+									color: rgba(255,255,255,.7);
+									margin-bottom: 1rem;
+								}
+
+								/* Pills */
+								.pill {
+									display: inline-block;
+									padding: 6px 12px;
+									background: rgba(34, 197, 94, 0.15);
+									color: #22c55e;
+									border-radius: 6px;
+									font-size: 0.8rem;
+									font-weight: 600;
+									border: 1px solid rgba(34, 197, 94, 0.3);
+								}
+
+								/* Empty state */
+								.empty-state {
+									text-align: center;
+									padding: 3rem 1rem;
+									color: rgba(255,255,255,.4);
+								}
+
+								.empty-state i {
+									font-size: 3rem;
+									margin-bottom: 1rem;
+									opacity: .5;
 								}
 								</style>
 
@@ -561,22 +828,29 @@
 
 									<!-- Reports -->
 									<div class="card card-3d mb-6">
-									<div class="card-header"><h3 class="card-title fw-bold m-0">Reports</h3></div>
-									<div class="card-body">
-										<div><strong>Grant ID:</strong> <span id="reports_grant_id">—</span></div>
-										<div class="mt-2"><strong>Next Due:</strong> <span id="reports_next_due">—</span></div>
-										<div class="mt-2"><strong>Last Submitted:</strong> <span id="reports_last_submitted">—</span></div>
-									</div>
+										<div class="card-header"><h3 class="card-title fw-bold m-0">Reports</h3></div>
+										<div class="card-body" id="reports_container">
+											<div class="report-stat-card">
+												<div class="report-stat-label">Grant ID</div>
+												<div class="report-stat-value" id="reports_grant_id">—</div>
+											</div>
+											<div class="report-stat-card">
+												<div class="report-stat-label">Next Due</div>
+												<div class="report-stat-value" id="reports_next_due">—</div>
+											</div>
+											<div class="report-stat-card">
+												<div class="report-stat-label">Last Submitted</div>
+												<div class="report-stat-value" id="reports_last_submitted">—</div>
+											</div>
+										</div>
 									</div>
 
 									<!-- Keywords -->
 									<div class="card card-3d">
-									<div class="card-header"><h3 class="card-title fw-bold m-0">Keywords</h3></div>
-									<div class="card-body">
-										<div class="d-flex flex-wrap gap-2" id="keywords_section">
-										<span class="badge bg-secondary">—</span>
+										<div class="card-header"><h3 class="card-title fw-bold m-0">Keywords</h3></div>
+										<div class="card-body">
+											<div id="keywords_section"></div>
 										</div>
-									</div>
 									</div>
 								</div>
 								</div>
@@ -700,7 +974,7 @@
 		<!-- Vendors (if truly needed on this page) -->
 		<script src="assets/plugins/custom/datatables/datatables.bundle.js"></script>
 
-		<!-- Publications page logic -->
+		<!-- Grants page logic -->
 		<script src="assets/js/custom/galaxy/grants.js" type="module"></script>
 		<!--end::Javascript-->
 		</body>

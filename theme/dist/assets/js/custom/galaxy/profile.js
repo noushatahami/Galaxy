@@ -1,5 +1,5 @@
 // theme/src/js/custom/galaxy/profile.js
-// ONE tiny edit button per card. The "Research Area" card edits Research Areas + Awards + Patents in ONE modal.
+// Enhanced visual display with card-based layouts
 
 (() => {
   /* ---------------- helpers ---------------- */
@@ -18,19 +18,19 @@
     profile: {
       name: '—',
       photo_url: 'assets/media/avatars/300-1.jpg',
-      social_media: {},             // { Platform: url/handle }
-      media_mentions: [],           // [string]
-      research_areas: [],           // [string]
-      awards: [],                   // [{year,title}]
-      patents: [],                  // [{title,number,inventors[],filed,status}]
-      mentors: [],                  // [string]
-      colleagues: [],               // [string]
-      partners: { "Academic Partners": 0, "Industry Partners": 0 }, // object, not array
-      affiliations: [],  // <-- add (schema field)
-      keywords: [],       // <-- add (schema field)
-      positions: [],                // [string]
-      education: [],                // [string]
-      memberships: []               // [string]
+      social_media: {},
+      media_mentions: [],
+      research_areas: [],
+      awards: [],
+      patents: [],
+      mentors: [],
+      colleagues: [],
+      partners: { "Academic Partners": 0, "Industry Partners": 0 },
+      affiliations: [],
+      keywords: [],
+      positions: [],
+      education: [],
+      memberships: []
     }
   };
 
@@ -84,18 +84,18 @@
       awards: p.awards || [],
       patents: p.patents || [],
       positions: p.positions || [],
-      affiliations: p.affiliations || [],   // NEW
+      affiliations: p.affiliations || [],
       education: p.education || [],
       memberships: p.memberships || [],
       mentors: p.mentors || [],
       colleagues: p.colleagues || [],
-      keywords: p.keywords || [],          // NEW
+      keywords: p.keywords || [],
       partners: p.partners || {"Academic Partners":0,"Industry Partners":0}
     };
   }
 
-  /* ---------------- renderers ---------------- */
-  const badge = (t) => `<span class="badge badge-light-primary fw-semibold me-2 mb-2">${t}</span>`;
+  /* ---------------- enhanced renderers ---------------- */
+  const badge = (t) => `<span class="pill">${t}</span>`;
 
   function renderHeader() {
     const n = $('#profile_name_display'); if (n) n.textContent = state.profile.name || '—';
@@ -106,69 +106,241 @@
     const ul = $(sel); if (!ul) return;
     const arr = state.profile[key] || [];
     ul.innerHTML = '';
-    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
-    arr.forEach(v => ul.appendChild(H('li','', v)));
+    
+    if (!arr.length) {
+      ul.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-information-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No items yet</div>';
+      return;
+    }
+    
+    arr.forEach(v => {
+      const li = H('li', 'info-list-item');
+      li.innerHTML = `
+        <div class="info-list-item-icon">
+          <i class="ki-duotone ki-check fs-3"><span class="path1"></span><span class="path2"></span></i>
+        </div>
+        <div class="info-list-item-content">
+          <div class="info-list-item-text">${v}</div>
+        </div>
+      `;
+      ul.appendChild(li);
+    });
   }
 
   function renderSocial() {
-    const ul = $('#social_media_view'); if (!ul) return;
+    const container = $('#social_media_view'); 
+    if (!container) return;
+    
     const entries = Object.entries(state.profile.social_media || {});
-    ul.innerHTML = '';
-    if (!entries.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
-    entries.forEach(([k, v]) => ul.appendChild(H('li','', `<strong>${k}:</strong> ${v}`)));
+    container.innerHTML = '';
+    
+    if (!entries.length) {
+      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-text-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No social media links</div>';
+      return;
+    }
+    
+    entries.forEach(([platform, handle]) => {
+      const item = H('div', 'social-item');
+      item.innerHTML = `
+        <span class="social-platform">${platform}</span>
+        <a href="${handle}" target="_blank" class="social-handle">${handle}</a>
+      `;
+      container.appendChild(item);
+    });
   }
 
   function renderResearchAreas() {
     const w = $('#research_areas_tags'); if (!w) return;
     const arr = state.profile.research_areas || [];
-    w.innerHTML = arr.length ? arr.map(badge).join('') : '<span class="text-muted">—</span>';
+    w.innerHTML = arr.length ? arr.map(badge).join('') : '<span class="text-muted">No research areas defined</span>';
   }
 
   function renderAwards() {
-    const ul = $('#awards_list'); if (!ul) return;
+    const container = $('#awards_list'); 
+    if (!container) return;
+    
     const arr = state.profile.awards || [];
-    ul.innerHTML = '';
-    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
-    arr.forEach(a => ul.appendChild(H('li','', `<span class="fw-semibold">${a.year || ''}</span> ${a.title || ''}`)));
+    container.innerHTML = '';
+    
+    if (!arr.length) {
+      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-award d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No awards yet</div>';
+      return;
+    }
+    
+    arr.forEach(award => {
+      const item = H('div', 'award-item');
+      item.innerHTML = `
+        <span class="award-year">${award.year || '—'}</span>
+        <span class="award-title">${award.title || 'Untitled'}</span>
+      `;
+      container.appendChild(item);
+    });
   }
 
   function renderPatents() {
-    const ul = $('#patents_list'); if (!ul) return;
+    const container = $('#patents_list'); 
+    if (!container) return;
+    
     const arr = state.profile.patents || [];
-    ul.innerHTML = '';
-    if (!arr.length) { ul.innerHTML = '<li class="text-muted">—</li>'; return; }
+    container.innerHTML = '';
+    
+    if (!arr.length) {
+      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-document d-block"><span class="path1"></span><span class="path2"></span></i>No patents yet</div>';
+      return;
+    }
+    
     arr.forEach(pt => {
-      const color = (pt.status||'').toLowerCase()==='pending' ? 'text-warning' : 'text-success';
-      ul.appendChild(H('li','mb-3', `
-        <div class="fw-semibold">${pt.title || ''}</div>
-        <div>No: ${pt.number || ''}</div>
-        <div>Inventors: ${(Array.isArray(pt.inventors)?pt.inventors:String(pt.inventors||'').split(',')).filter(Boolean).join(', ')}</div>
-        <div>Filed: ${pt.filed || ''}</div>
-        <div class="${color}">● ${pt.status || ''}</div>
-      `));
+      const card = H('div', 'patent-card');
+      const inventors = Array.isArray(pt.inventors) 
+        ? pt.inventors.filter(Boolean).join(', ') 
+        : String(pt.inventors || '').split(',').map(s => s.trim()).filter(Boolean).join(', ');
+      
+      const statusClass = (pt.status || '').toLowerCase() === 'granted' 
+        ? 'patent-status-granted' 
+        : 'patent-status-pending';
+      
+      card.innerHTML = `
+        <div class="patent-header">
+          <div class="patent-title">${pt.title || 'Untitled Patent'}</div>
+          <div class="patent-number">${pt.number || 'No number'}</div>
+        </div>
+        <div class="patent-meta">
+          <div><strong>Inventors:</strong> ${inventors || 'Not specified'}</div>
+          <div>
+            <strong>Filed:</strong> ${pt.filed || 'Unknown'}
+            <span class="patent-status ${statusClass}">${pt.status || 'Pending'}</span>
+          </div>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function renderPartners() {
+    const container = $('#partners_view');
+    if (!container) return;
+    
+    const obj = state.profile.partners || {};
+    const entries = Object.entries(obj);
+    container.innerHTML = '';
+    
+    if (!entries.length) {
+      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-handshake d-block"><span class="path1"></span><span class="path2"></span></i>No partners</div>';
+      return;
+    }
+    
+    entries.forEach(([label, count]) => {
+      const stat = H('div', 'partner-stat');
+      stat.innerHTML = `
+        <span class="partner-count">${count}</span>
+        <span class="partner-label">${label}</span>
+      `;
+      container.appendChild(stat);
     });
   }
 
   function renderAll() {
     renderHeader();
     renderSocial();
-    renderSimpleList('#media_mentions_list','media_mentions');
+    
+    // Media mentions
+    const mentionsUl = $('#media_mentions_list');
+    if (mentionsUl) {
+      mentionsUl.className = 'info-list';
+      const arr = state.profile.media_mentions || [];
+      mentionsUl.innerHTML = '';
+      
+      if (!arr.length) {
+        mentionsUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-programming d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No media mentions</div>';
+      } else {
+        arr.forEach(v => {
+          const li = H('li', 'info-list-item');
+          li.innerHTML = `
+            <div class="info-list-item-icon">
+              <i class="ki-duotone ki-message-text fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+            </div>
+            <div class="info-list-item-content">
+              <div class="info-list-item-text">${v}</div>
+            </div>
+          `;
+          mentionsUl.appendChild(li);
+        });
+      }
+    }
+    
     renderResearchAreas();
     renderAwards();
     renderPatents();
-    renderSimpleList('#mentors_list','mentors');
-    renderSimpleList('#colleagues_list','colleagues');
-    const pv = $('#partners_view');
-    if (pv) {
-      const obj = state.profile.partners || {};
-      const entries = Object.entries(obj);
-      pv.innerHTML = entries.length
-        ? entries.map(([label, count]) => `<li><span class="fw-semibold">${count}</span> ${label}</li>`).join('')
-        : '<li class="text-muted">—</li>';
+    
+    // Mentors and Colleagues with proper list styling
+    const mentorsUl = $('#mentors_list');
+    if (mentorsUl) {
+      mentorsUl.className = 'info-list';
+      const arr = state.profile.mentors || [];
+      mentorsUl.innerHTML = '';
+      
+      if (!arr.length) {
+        mentorsUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-user d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No mentors listed</div>';
+      } else {
+        arr.forEach(v => {
+          const li = H('li', 'info-list-item');
+          li.innerHTML = `
+            <div class="info-list-item-icon">
+              <i class="ki-duotone ki-user fs-3"><span class="path1"></span><span class="path2"></span></i>
+            </div>
+            <div class="info-list-item-content">
+              <div class="info-list-item-text">${v}</div>
+            </div>
+          `;
+          mentorsUl.appendChild(li);
+        });
+      }
     }
-    renderSimpleList('#positions_list','positions');
-    renderSimpleList('#education_list','education');
-    renderSimpleList('#memberships_list','memberships');
+    
+    const colleaguesUl = $('#colleagues_list');
+    if (colleaguesUl) {
+      colleaguesUl.className = 'info-list';
+      const arr = state.profile.colleagues || [];
+      colleaguesUl.innerHTML = '';
+      
+      if (!arr.length) {
+        colleaguesUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-circle d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No colleagues listed</div>';
+      } else {
+        arr.forEach(v => {
+          const li = H('li', 'info-list-item');
+          li.innerHTML = `
+            <div class="info-list-item-icon">
+              <i class="ki-duotone ki-profile-user fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>
+            </div>
+            <div class="info-list-item-content">
+              <div class="info-list-item-text">${v}</div>
+            </div>
+          `;
+          colleaguesUl.appendChild(li);
+        });
+      }
+    }
+    
+    renderPartners();
+    
+    // Right column with proper list styling
+    const positionsUl = $('#positions_list');
+    if (positionsUl) {
+      positionsUl.className = 'info-list';
+      renderSimpleList('#positions_list', 'positions');
+    }
+    
+    const educationUl = $('#education_list');
+    if (educationUl) {
+      educationUl.className = 'info-list';
+      renderSimpleList('#education_list', 'education');
+    }
+    
+    const membershipsUl = $('#memberships_list');
+    if (membershipsUl) {
+      membershipsUl.className = 'info-list';
+      renderSimpleList('#memberships_list', 'memberships');
+    }
+    
     reflectEditMode();
   }
 
@@ -177,47 +349,83 @@
     const nameEl = document.getElementById('profile_name_display');
     if (nameEl) nameEl.textContent = profile?.name || '—';
 
+    // Social media
     const socialWrap = document.getElementById('social_media_view');
     if (socialWrap) {
       socialWrap.innerHTML = '';
       const entries = Object.entries(profile?.socials || {});
-      if (!entries.length) socialWrap.innerHTML = '<li class="text-muted">—</li>';
-      else entries.forEach(([k,v])=>{
-        const li = document.createElement('li');
-        li.innerHTML = `<strong>${k}:</strong> ${v}`;
-        socialWrap.appendChild(li);
-      });
+      if (!entries.length) {
+        socialWrap.innerHTML = '<div class="empty-state">No social media links</div>';
+      } else {
+        entries.forEach(([k, v]) => {
+          const item = H('div', 'social-item');
+          item.innerHTML = `
+            <span class="social-platform">${k}</span>
+            <a href="${v}" target="_blank" class="social-handle">${v}</a>
+          `;
+          socialWrap.appendChild(item);
+        });
+      }
     }
 
+    // Research areas
     const tagWrap = document.getElementById('research_areas_tags');
     if (tagWrap) {
       tagWrap.innerHTML = '';
-      (profile?.research_areas || []).forEach(t=>{
-        const b = document.createElement('span');
-        b.className = 'badge badge-light-success me-2 mb-2';
-        b.textContent = t;
-        tagWrap.appendChild(b);
-      });
-      if ((profile?.research_areas||[]).length === 0) tagWrap.innerHTML = '<span class="text-muted">—</span>';
+      const areas = profile?.research_areas || [];
+      if (areas.length === 0) {
+        tagWrap.innerHTML = '<span class="text-muted">No research areas</span>';
+      } else {
+        areas.forEach(t => {
+          const b = document.createElement('span');
+          b.className = 'pill';
+          b.textContent = t;
+          tagWrap.appendChild(b);
+        });
+      }
     }
 
+    // Simple lists with new styling
     const paintList = (id, items) => {
       const ul = document.getElementById(id);
       if (!ul) return;
+      ul.className = 'info-list';
       ul.innerHTML = '';
-      (items || []).forEach(v => {
-        const li = document.createElement('li'); li.textContent = v; ul.appendChild(li);
+      
+      if (!items || !items.length) {
+        ul.innerHTML = '<div class="empty-state">No items</div>';
+        return;
+      }
+      
+      items.forEach(v => {
+        const li = H('li', 'info-list-item');
+        li.innerHTML = `
+          <div class="info-list-item-icon">
+            <i class="ki-duotone ki-check fs-3"><span class="path1"></span><span class="path2"></span></i>
+          </div>
+          <div class="info-list-item-content">
+            <div class="info-list-item-text">${v}</div>
+          </div>
+        `;
+        ul.appendChild(li);
       });
-      if (!items || !items.length) ul.innerHTML = '<li class="text-muted">—</li>';
     };
-    paintList('positions_list',   profile?.positions);
-    paintList('education_list',   profile?.education);
+    
+    paintList('positions_list', profile?.positions);
+    paintList('education_list', profile?.education);
     paintList('memberships_list', profile?.memberships);
 
     const notes = document.getElementById('media_mentions_list');
     if (notes) {
-      const li = document.createElement('li');
-      li.textContent = `Imported CV ${new Date().toLocaleDateString()}`;
+      const li = H('li', 'info-list-item');
+      li.innerHTML = `
+        <div class="info-list-item-icon">
+          <i class="ki-duotone ki-check fs-3"><span class="path1"></span><span class="path2"></span></i>
+        </div>
+        <div class="info-list-item-content">
+          <div class="info-list-item-text">Imported CV ${new Date().toLocaleDateString()}</div>
+        </div>
+      `;
       notes.prepend(li);
     }
   }
@@ -226,8 +434,8 @@
   function reflectEditMode() {
     const t = $('#editToggle'); if (t) t.textContent = editMode ? 'Done' : 'Edit';
     $$('.box-edit-btn').forEach(b => b.classList.toggle('d-none', !editMode));
-     const importBtn = $('#importCvBtn');
-     if (importBtn) importBtn.classList.toggle('d-none', !editMode);
+    const importBtn = $('#importCvBtn');
+    if (importBtn) importBtn.classList.toggle('d-none', !editMode);
   }
   
   // inject ONE tiny edit button per card
@@ -235,7 +443,6 @@
     const configs = [
       { key:'social',  anchor:'#social_media_view',   title:'Edit: Social Media',        build: buildSocialModal },
       { key:'media',   anchor:'#media_mentions_list', title:'Edit: Media Appearances',   build: () => buildSimpleLinesModal('media_mentions','One per line') },
-      // SINGLE button for the Research card → edits research areas + awards + patents
       { key:'research_all', anchor:'#research_areas_tags', title:'Edit: Research Area',   build: buildResearchAwardsPatentsModal },
       { key:'mentorscol', anchor:'#mentors_list',     title:'Edit: Mentors & Colleagues', build: buildMentorsColleaguesModal },
       { key:'partners', anchor:'#partners_view',      title:'Edit: Partners',             build: buildPartnersModal },
@@ -249,7 +456,6 @@
       const header = card?.querySelector('.card-header');
       if (!header) return;
 
-      // Clean up any older multiple buttons inside this header
       header.querySelectorAll('.box-edit-btn').forEach(b => b.remove());
 
       let rail = header.querySelector('.card-toolbar');
@@ -297,9 +503,9 @@
     const newSave = oldSave.cloneNode(true);
     oldSave.parentNode.replaceChild(newSave, oldSave);
     newSave.addEventListener('click', async () => {
-      await onSave();                // pull inputs → state.profile
-      saveProfile();                 // local cache
-      await persistPage('profile', toProfilePayload()); // <-- NEW: write-through to API
+      await onSave();
+      saveProfile();
+      await persistPage('profile', toProfilePayload());
       renderAll();
       bsModal.hide();
     });
@@ -347,7 +553,6 @@
     return [wrap,onSave];
   }
 
-  // ONE modal for Research Areas + Awards + Patents (matches your screenshot idea)
   function buildResearchAwardsPatentsModal() {
     const root = H('div');
 
@@ -368,7 +573,6 @@
       sec.box.appendChild(list); sec.box.appendChild(add);
       root.appendChild(sec.wrap);
 
-      // capture onSave piece
       root._saveAreas = () => {
         const arr=[];
         list.querySelectorAll('input').forEach(i=>{ const v=i.value.trim(); if(v) arr.push(v); });
@@ -558,17 +762,15 @@
       }
 
       const fd = new FormData(form);
-      fd.set('cv', file); // backend expects "cv"
+      fd.set('cv', file);
 
       try {
         const r = await fetch(`${API}/ingest/cv`, { method:'POST', body: fd });
         if (!r.ok) throw new Error(`Upload failed (${r.status})`);
         const data = await r.json();
 
-        // Save cv_id for other pages (e.g., Publications verify)
         if (data.cv_id) {
           localStorage.setItem('galaxy_cv_id', data.cv_id);
-          // 🔔 trigger Publications aggregation (OpenAlex) ONLY after CV import
           window.dispatchEvent(new CustomEvent('galaxy:cv:imported', { detail: { cv_id: data.cv_id } }));
         }
 
@@ -577,7 +779,6 @@
         localStorage.removeItem('galaxy_compliance');
 
         const p = data.profile || {};
-        // also include the socials typed by the user so UI updates immediately
         p.socials = p.socials || {};
         const li = form.querySelector('[name="linkedin_url"]')?.value?.trim();
         const sc = form.querySelector('[name="scholar_url"]')?.value?.trim();
@@ -586,7 +787,6 @@
         if (sc) p.socials['Google Scholar'] = sc;
         if (tw) p.socials['X'] = tw;
 
-        // Merge into your state shape
         state.profile.name = p.name || state.profile.name;
         state.profile.social_media = { ...(state.profile.social_media||{}), ...(p.socials||{}) };
         if (Array.isArray(p.research_areas)) state.profile.research_areas = p.research_areas;
@@ -604,7 +804,6 @@
           state.profile.partners = p.partners;
         }
 
-        // Persist & paint now
         localStorage.setItem('galaxy_profile', JSON.stringify(state.profile));
         paintProfileImmediate({
           name: state.profile.name,
@@ -628,7 +827,7 @@
     await loadProfile();
     ensureShape();
 
-    ensureTinyButtons();   // inject ONE tiny edit button for each card
+    ensureTinyButtons();
     wireEditToggle();
     wireAvatar();
     wireImportButton();
