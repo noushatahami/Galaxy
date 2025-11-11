@@ -14,12 +14,12 @@
   /* ----------------------- state ----------------------- */
   let editMode = false;
   const state = {
-    checkpoints: [],     // [{id,title,status,lastReviewed,link}]
-    audits: [],          // [{id,name,date,score,tags:[]}]
-    notes: [],           // ["text", ...] or [{text, date}]
+    checkpoints: [],
+    audits: [],
+    notes: [],
     summary: { compliant:0, pending:0, noncompliant:0 },
-    quickActions: [],    // ["Upload SOC2 evidence", ...] or [{label, href}]
-    contacts: []         // [{name, role, avatar}]
+    quickActions: [],
+    contacts: []
   };
 
   /* ----------------------- helpers ----------------------- */
@@ -32,15 +32,14 @@
     return x;
   }
 
-  // Recompute summary primarily from checkpoints. If zero checkpoints, keep server-provided summary.
   function recomputeSummaryFromCheckpoints(){
     const cps = Array.isArray(state.checkpoints) ? state.checkpoints : [];
-    if (!cps.length) return; // nothing to recompute
+    if (!cps.length) return;
     let compliant=0, pending=0, noncompliant=0;
     cps.forEach(cp=>{
       const st = normalizeStatus(cp.status);
       if (st === 'compliant') compliant++;
-      else if (st === 'pending' || st === '') pending++; // blank treated as pending
+      else if (st === 'pending' || st === '') pending++;
       else noncompliant++;
     });
     state.summary = { compliant, pending, noncompliant };
@@ -61,15 +60,12 @@
   async function load() {
     const hasCV = !!localStorage.getItem('galaxy_cv_id');
 
-    // 1) Soft-load cache first (but don't trust it if a new CV was uploaded)
     const cached = localStorage.getItem('galaxy_compliance');
     if (cached && !hasCV) {
       try { Object.assign(state, JSON.parse(cached)); } catch {}
     }
 
-    // 2) Prefer API (CV-backed). Any successful fetch overrides current state.
     try {
-      // unified object first
       const rootResp = await fetch(`${API}/compliance`);
       if (rootResp.ok) {
         const root = await rootResp.json();
@@ -81,7 +77,6 @@
         if (Array.isArray(root.notes))         state.notes        = root.notes;
       }
 
-      // granular endpoints (override pieces if they exist)
       const [summary, checkpoints, audits, notes, actions, contacts] = await Promise.allSettled([
         fetch(`${API}/compliance/summary`),
         fetch(`${API}/compliance/checkpoints`),
@@ -114,11 +109,8 @@
         const d = await contacts.value.json();
         state.keyContacts = d.items || d || [];
       }
-    } catch {
-      // swallow; we'll try static next
-    }
+    } catch {}
 
-    // 3) Static fallback
     if (!state.summary && !state.checkpoints?.length && !state.audits?.length) {
       try {
         const r = await fetch('data/compliance.json', { cache: 'no-store' });
@@ -126,7 +118,6 @@
       } catch {}
     }
 
-    // 4) Final safety defaults so UI never breaks
     state.summary = state.summary || { compliant: 0, pending: 0, noncompliant: 0 };
     state.checkpoints = Array.isArray(state.checkpoints) ? state.checkpoints : [];
     state.audits      = Array.isArray(state.audits)      ? state.audits      : [];
@@ -134,10 +125,8 @@
     state.quickActions= Array.isArray(state.quickActions)? state.quickActions: [];
     state.keyContacts = Array.isArray(state.keyContacts) ? state.keyContacts : [];
 
-    // 5) Recompute summary from live checkpoints if we have them
     recomputeSummaryFromCheckpoints();
 
-    // 6) Cache the good stuff for snappy reloads
     try { localStorage.setItem('galaxy_compliance', JSON.stringify(state)); } catch {}
   }
 
@@ -145,50 +134,83 @@
   function renderCheckpoints(){
     const wrap = $('#checkpoints_list'); if (!wrap) return;
     wrap.innerHTML = '';
-    if (!state.checkpoints?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    
+    if (!state.checkpoints?.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-shield-tick d-block"><span class="path1"></span><span class="path2"></span></i>No checkpoints defined</div>';
+      return;
+    }
+    
     state.checkpoints.forEach(cp=>{
-      const box = H('div','rounded border border-white/10 p-3 bg-white/5','');
-      const row = H('div','d-flex align-items-center justify-content-between','');
       const st = normalizeStatus(cp.status);
-      const statusIcon = st === 'compliant' ? '✅' : (st === 'pending' ? '⏳' : (st ? '⚠️' : ''));
-      row.appendChild(H('div','fw-semibold', `${cp.title || '—'} ${statusIcon ? `<span class="ms-2">${statusIcon}</span>` : ''}`));
-      const btn = cp.link
-        ? H('a','btn btn-sm btn-light','View Details')
-        : H('button','btn btn-sm btn-light','View Details');
-      if (cp.link) btn.href = cp.link, btn.target = '_blank';
-      row.appendChild(btn);
-      box.appendChild(row);
-      box.appendChild(H('div','text-gray-400 fs-8 mt-1', `Last Reviewed: ${fmtDate(cp.lastReviewed)}`));
-      wrap.appendChild(box);
+      const statusClass = st === 'compliant' ? 'checkpoint-compliant' : (st === 'pending' ? 'checkpoint-pending' : 'checkpoint-noncompliant');
+      const statusIcon = st === 'compliant' ? 'ki-shield-tick' : (st === 'pending' ? 'ki-time' : 'ki-information');
+      
+      const card = H('div', `checkpoint-card ${statusClass}`);
+      card.innerHTML = `
+        <div class="checkpoint-header">
+          <div class="checkpoint-title">
+            <i class="ki-duotone ${statusIcon} fs-2"><span class="path1"></span><span class="path2"></span></i>
+            <span>${cp.title || '—'}</span>
+          </div>
+          ${cp.link ? `<a href="${cp.link}" target="_blank" class="btn btn-sm btn-light">View Details</a>` : '<button class="btn btn-sm btn-light">View Details</button>'}
+        </div>
+        <div class="checkpoint-meta">
+          <span class="checkpoint-date">Last Reviewed: ${fmtDate(cp.lastReviewed)}</span>
+        </div>
+      `;
+      wrap.appendChild(card);
     });
   }
 
   function renderAudits(){
     const wrap = $('#audits_list'); if (!wrap) return;
     wrap.innerHTML = '';
-    if (!state.audits?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    
+    if (!state.audits?.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-document d-block"><span class="path1"></span><span class="path2"></span></i>No audits recorded</div>';
+      return;
+    }
+    
     state.audits.forEach(a=>{
-      const box = H('div','ps-3 border-start border-3 border-secondary','');
-      box.appendChild(H('div','fw-semibold', a.name || 'Audit'));
-      box.appendChild(H('div','text-gray-400 fs-8', `Date: ${fmtDate(a.date)}  |  Score: ${a.score ?? '—'}`));
+      const card = H('div', 'audit-card');
       const tags = Array.isArray(a.tags) ? a.tags : [];
-      if (tags.length){
-        const t = H('div','mt-2','');
-        tags.forEach(tag => t.appendChild(H('span','badge bg-success bg-opacity-20 text-success me-1 mb-1', tag)));
-        box.appendChild(t);
-      }
-      wrap.appendChild(box);
+      
+      card.innerHTML = `
+        <div class="audit-header">
+          <div class="audit-name">${a.name || 'Audit'}</div>
+          <div class="audit-score">${a.score ?? '—'}</div>
+        </div>
+        <div class="audit-date">${fmtDate(a.date)}</div>
+        ${tags.length ? `<div class="audit-tags">${tags.map(tag => `<span class="pill">${tag}</span>`).join('')}</div>` : ''}
+      `;
+      wrap.appendChild(card);
     });
   }
 
   function renderNotes(){
     const wrap = $('#notes_list'); if (!wrap) return;
     wrap.innerHTML = '';
-    if (!state.notes?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    
+    if (!state.notes?.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-notepad d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span><span class="path5"></span></i>No compliance notes</div>';
+      return;
+    }
+    
+    const list = H('ul', 'info-list');
     state.notes.forEach(n=>{
       const text = typeof n === 'string' ? n : (n.text || '—');
-      wrap.appendChild(H('div','text-gray-200', text));
+      const li = H('li', 'info-list-item');
+      li.innerHTML = `
+        <div class="info-list-item-icon">
+          <i class="ki-duotone ki-note-2 fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>
+        </div>
+        <div class="info-list-item-content">
+          <div class="info-list-item-text">${text}</div>
+        </div>
+      `;
+      list.appendChild(li);
     });
+    wrap.appendChild(list);
   }
 
   function renderSummary(){
@@ -198,28 +220,24 @@
     if (p) p.textContent = String(s.pending ?? 0);
     if (n) n.textContent = String(s.noncompliant ?? 0);
 
-    // Totals + percents
     const total = (s.compliant||0) + (s.pending||0) + (s.noncompliant||0);
     const pct   = total ? Math.round((s.compliant||0) * 100 / total) : 0;
     const pctPending = total ? Math.round((s.pending||0) * 100 / total) : 0;
     const pctNon     = total ? Math.round((s.noncompliant||0) * 100 / total) : 0;
 
-    // Donut ring
     const path = $('#summary_donut_path');
     const pctText = $('#summary_percent_text');
     const totalText = $('#summary_total_text');
-    const CIRC = 2 * Math.PI * 64; // r=64 (matches HTML)
+    const CIRC = 2 * Math.PI * 64;
     if (path){
       const dash = (pct/100) * CIRC;
       path.setAttribute('stroke-dasharray', `${dash} ${CIRC - dash}`);
-      // color shifts slightly based on compliance
       const color = pct >= 75 ? '#22c55e' : (pct >= 40 ? '#f59e0b' : '#ef4444');
       path.setAttribute('stroke', color);
     }
     if (pctText)   pctText.textContent = `${pct}%`;
     if (totalText) totalText.textContent = `${s.compliant||0} of ${total}`;
 
-    // Mini-bars
     const g = $('#bar_green'), a = $('#bar_amber'), r = $('#bar_red');
     if (g) g.style.width = `${pct}%`;
     if (a) a.style.width = `${pctPending}%`;
@@ -229,32 +247,55 @@
   function renderQuickActions(){
     const wrap = $('#quick_actions_list'); if (!wrap) return;
     wrap.innerHTML = '';
-    if (!state.quickActions?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    
+    if (!state.quickActions?.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-rocket d-block"><span class="path1"></span><span class="path2"></span></i>No quick actions</div>';
+      return;
+    }
+    
+    const list = H('div', 'quick-actions-list');
     state.quickActions.forEach(a=>{
       const label = typeof a === 'string' ? a : (a.label || 'Action');
       const href  = typeof a === 'object' ? a.href : null;
-      const btn = href
-        ? H('a','text-start px-3 py-2 rounded bg-white/10 border border-white/10 d-block', label)
-        : H('button','text-start px-3 py-2 rounded bg-white/10 border border-white/10', label);
-      if (href) btn.href = href, btn.target = '_blank';
-      wrap.appendChild(btn);
+      
+      const item = H('div', 'quick-action-item');
+      item.innerHTML = `
+        <i class="ki-duotone ki-arrow-right fs-3"><span class="path1"></span><span class="path2"></span></i>
+        <span>${label}</span>
+      `;
+      
+      if (href) {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', () => window.open(href, '_blank'));
+      }
+      
+      list.appendChild(item);
     });
+    wrap.appendChild(list);
   }
 
   function renderContacts(){
     const wrap = $('#key_contacts_list'); if (!wrap) return;
     wrap.innerHTML = '';
-    if (!state.contacts?.length) { wrap.appendChild(H('div','text-gray-400','—')); return; }
+    
+    if (!state.contacts?.length) {
+      wrap.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-user d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No contacts listed</div>';
+      return;
+    }
+    
+    const list = H('div', 'contacts-list');
     state.contacts.forEach(c=>{
-      const row = H('div','d-flex align-items-center gap-3','');
-      const sym = H('div','symbol symbol-40px','');
-      sym.appendChild(H('img','rounded-circle','')).src = c.avatar || 'assets/media/avatars/blank.png';
-      const meta = H('div','lh-sm','');
-      meta.appendChild(H('div','fw-semibold', c.name || '—'));
-      meta.appendChild(H('div','text-gray-400 fs-8', c.role || '—'));
-      row.appendChild(sym); row.appendChild(meta);
-      wrap.appendChild(row);
+      const item = H('div', 'contact-item');
+      item.innerHTML = `
+        <img src="${c.avatar || 'assets/media/avatars/blank.png'}" alt="${c.name}" class="contact-avatar">
+        <div class="contact-info">
+          <div class="contact-name">${c.name || '—'}</div>
+          <div class="contact-role">${c.role || '—'}</div>
+        </div>
+      `;
+      list.appendChild(item);
     });
+    wrap.appendChild(list);
   }
 
   function renderAll(){
@@ -334,12 +375,9 @@
     const neo = old.cloneNode(true);
     old.parentNode.replaceChild(neo, old);
     neo.addEventListener('click', async ()=>{
-      await onSave();                              // copy inputs -> state
-
-      // After edits, recompute summary from checkpoints so numbers/visuals stay in sync
+      await onSave();
       recomputeSummaryFromCheckpoints();
-
-      await persistPage('compliance', {            // push to /api/page
+      await persistPage('compliance', {
         summary: state.summary,
         quick_actions: state.quickActions,
         key_contacts: state.keyContacts,
@@ -347,7 +385,7 @@
         audits: state.audits,
         notes: state.notes
       });
-      save();                                      // keep local cache
+      save();
       renderAll();
       bsModal.hide();
     });
