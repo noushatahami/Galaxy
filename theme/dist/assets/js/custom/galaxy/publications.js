@@ -91,42 +91,105 @@
 
   /* ---------------- renderers ---------------- */
   function renderPublicationsList() {
-    const container = $('#publications_list'); if (!container) return;
-    container.innerHTML = '';
+  const container = $('#publications_list'); if (!container) return;
+  container.innerHTML = '';
 
-    if (!state.publications?.length) {
-      container.innerHTML = '<div class="text-gray-400">—</div>'; return;
-    }
-
-    state.publications.forEach(p => {
-      const blk = H('div','border-top border-gray-300 border-opacity-10 pt-4','');
-      const title = H('div','fw-semibold','');
-      if (p.url || p.doi) {
-        const a = H('a','text-white text-hover-primary', p.title || 'Untitled');
-        a.href = p.url || (p.doi ? `https://doi.org/${p.doi}` : '#'); a.target = '_blank';
-        title.appendChild(a);
-      } else { title.textContent = p.title || 'Untitled'; }
-      const meta = H('div','text-gray-400 fs-8 mt-1','');
-      const authors = Array.isArray(p.authors) ? p.authors.join(', ') : (p.authors||'—');
-      const venue = p.journal || p.venue || p.conference || '';
-      const year  = p.year || '';
-      meta.textContent = [authors, venue, year].filter(Boolean).join(' • ');
-
-      const row = H('div','d-flex align-items-center justify-content-between mt-2','');
-      const tagsWrap = H('div','d-flex flex-wrap gap-2','');
-      const tags = p.tags || p.topics || [];
-      tags.forEach(t =>
-        tagsWrap.appendChild(
-          H('span','badge bg-success bg-opacity-20 text-success', t)
-        )
-      );
-      const cites = H('span','badge badge-light-primary', Number(p.citations||0) ? `${p.citations} citations` : '—');
-
-      row.appendChild(tagsWrap); row.appendChild(cites);
-      blk.appendChild(title); blk.appendChild(meta); blk.appendChild(row);
-      container.appendChild(blk);
-    });
+  if (!state.publications?.length) {
+    container.innerHTML = '<div class="text-gray-400">—</div>'; return;
   }
+
+  const LIMIT = 12;
+  let showAll = container.dataset.showAll === 'true';
+
+  state.publications.forEach((p, index) => {
+    const blk = H('div','border-top border-gray-300 border-opacity-10 pt-4','');
+    
+    // Hide publications beyond limit
+    if (!showAll && index >= LIMIT) {
+      blk.style.display = 'none';
+      blk.classList.add('pub-hidden-item');
+    }
+    
+    const title = H('div','fw-semibold','');
+    if (p.url || p.doi) {
+      const a = H('a','text-white text-hover-primary', p.title || 'Untitled');
+      a.href = p.url || (p.doi ? `https://doi.org/${p.doi}` : '#'); a.target = '_blank';
+      title.appendChild(a);
+    } else { title.textContent = p.title || 'Untitled'; }
+    const meta = H('div','text-gray-400 fs-8 mt-1','');
+    const authors = Array.isArray(p.authors) ? p.authors.join(', ') : (p.authors||'—');
+    const venue = p.journal || p.venue || p.conference || '';
+    const year  = p.year || '';
+    meta.textContent = [authors, venue, year].filter(Boolean).join(' • ');
+
+    const row = H('div','d-flex align-items-center justify-content-between mt-2','');
+    const tagsWrap = H('div','d-flex flex-wrap gap-2','');
+    const tags = p.tags || p.topics || [];
+    tags.forEach(t =>
+      tagsWrap.appendChild(
+        H('span','badge bg-success bg-opacity-20 text-success', t)
+      )
+    );
+    const cites = H('span','badge badge-light-primary', Number(p.citations||0) ? `${p.citations} citations` : '—');
+
+    row.appendChild(tagsWrap); row.appendChild(cites);
+    blk.appendChild(title); blk.appendChild(meta); blk.appendChild(row);
+    container.appendChild(blk);
+  });
+
+  // Add show more/less button if needed
+  if (state.publications.length > LIMIT) {
+    const btnWrapper = H('div', 'mt-4', '');
+    const btn = H('button', 'btn btn-sm btn-light w-100', '');
+    btn.style.cssText = `
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.12);
+      color: rgba(255,255,255,.8);
+      font-weight: 600;
+      transition: all .3s ease;
+    `;
+    
+    btn.innerHTML = showAll 
+      ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+      : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${state.publications.length - LIMIT})`;
+    
+    btn.addEventListener('click', () => {
+      showAll = !showAll;
+      container.dataset.showAll = showAll;
+      
+      // Toggle visibility
+      const hiddenItems = container.querySelectorAll('.pub-hidden-item');
+      hiddenItems.forEach(item => {
+        item.style.display = showAll ? '' : 'none';
+      });
+      
+      // Update button
+      btn.innerHTML = showAll 
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${state.publications.length - LIMIT})`;
+      
+      // Scroll to top when collapsing
+      if (!showAll) {
+        container.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+    
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255,255,255,.08)';
+      btn.style.transform = 'translateY(-2px)';
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255,255,255,.05)';
+      btn.style.transform = 'translateY(0)';
+    });
+    
+    btnWrapper.appendChild(btn);
+    container.appendChild(btnWrapper);
+  }
+}
 
   function renderMetrics() {
     const m = state.overrides.metrics ? (state.metrics||{}) : computeMetricsFromPublications(state.publications);
