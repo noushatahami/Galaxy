@@ -192,6 +192,10 @@
       transform: translateX(4px);
     }
 
+    .publication-item.pub-hidden {
+      display: none !important;
+    }
+
     /* Badge styling with color coding */
     .badge {
       padding: .4rem .75rem;
@@ -207,48 +211,104 @@
       filter: brightness(1.1);
     }
 
-    /* Color classes for badges - full color backgrounds */
-  /* Badge styling with color coding */
-.badge {
-  padding: .4rem .75rem;
-  border-radius: 999px;
-  font-size: .875rem;
-  font-weight: 500;
-  transition: all .2s ease;
-}
-.badge:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,.3);
-  filter: brightness(1.15);
-}
+    /* Default badge style for non-topic badges (like citations) */
+    .badge-default {
+      background: rgba(30, 54, 100, 0.3) !important;
+      border: 1px solid rgba(69, 134, 231, 0.45) !important;
+      color: #4c99f0 !important;
+    }
 
-/* Badge styling with color coding */
-.badge {
-  padding: .4rem .75rem;
-  border-radius: 999px;
-  font-size: .875rem;
-  font-weight: 500;
-  transition: all .2s ease;
-}
-.badge:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0,0,0,.2);
-  filter: brightness(1.1);
-}
+    /* Cohesive muted color palette matching the blue theme */
+    .badge-color-0 { 
+      background: rgba(231, 76, 60, 0.25) !important; 
+      border-color: rgba(231, 76, 60, 0.4) !important; 
+      color: #e74c3c !important; 
+    }
+    .badge-color-1 { 
+      background: rgba(26, 188, 156, 0.25) !important; 
+      border-color: rgba(26, 188, 156, 0.4) !important; 
+      color: #1abc9c !important; 
+    }
+    .badge-color-2 { 
+      background: rgba(155, 89, 182, 0.25) !important; 
+      border-color: rgba(155, 89, 182, 0.4) !important; 
+      color: #9b59b6 !important; 
+    }
+    .badge-color-3 { 
+      background: rgba(243, 156, 18, 0.25) !important; 
+      border-color: rgba(243, 156, 18, 0.4) !important; 
+      color: #f39c12 !important; 
+    }
+    .badge-color-4 { 
+      background: rgba(46, 204, 113, 0.25) !important; 
+      border-color: rgba(46, 204, 113, 0.4) !important; 
+      color: #2ecc71 !important; 
+    }
+    .badge-color-5 { 
+      background: rgba(142, 68, 173, 0.25) !important; 
+      border-color: rgba(142, 68, 173, 0.4) !important; 
+      color: #8e44ad !important; 
+    }
+    .badge-color-6 { 
+      background: rgba(52, 152, 219, 0.25) !important; 
+      border-color: rgba(52, 152, 219, 0.4) !important; 
+      color: #3498db !important; 
+    }
+    .badge-color-7 { 
+      background: rgba(230, 126, 34, 0.25) !important; 
+      border-color: rgba(230, 126, 34, 0.4) !important; 
+      color: #e67e22 !important; 
+    }
+    .badge-color-8 { 
+      background: rgba(192, 57, 43, 0.25) !important; 
+      border-color: rgba(192, 57, 43, 0.4) !important; 
+      color: #c0392b !important; 
+    }
+    .badge-color-9 { 
+      background: rgba(41, 128, 185, 0.25) !important; 
+      border-color: rgba(41, 128, 185, 0.4) !important; 
+      color: #2980b9 !important; 
+    }
+    .badge-color-10 { 
+      background: rgba(22, 160, 133, 0.25) !important; 
+      border-color: rgba(22, 160, 133, 0.4) !important; 
+      color: #16a085 !important; 
+    }
+    .badge-color-11 { 
+      background: rgba(211, 84, 0, 0.25) !important; 
+      border-color: rgba(211, 84, 0, 0.4) !important; 
+      color: #d35400 !important; 
+    }
 
-/* Default badge style for non-topic badges (like citations) */
-.badge-default {
-  background: rgba(30, 54, 100, 0.3) !important;
-  border: 1px solid rgba(69, 134, 231, 0.45) !important;
-  color: #4c99f0 !important;
-}
+    /* See More button styling */
+    #seeMoreBtn {
+      margin-top: 1.5rem;
+      width: 100%;
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.12);
+      color: rgba(255,255,255,.8);
+      font-weight: 600;
+      transition: all .3s ease;
+      cursor: pointer;
+    }
 
-/* Cohesive muted color palette matching the blue theme */
-.badge-color-0 { 
-  background: rgba(46, 204, 113, 0.25) !important; 
-  border-color: rgba(46, 204, 113, 0.4) !important; 
-  color: #2ecc71 !important; 
-}
+    #seeMoreBtn:hover {
+      background: rgba(255,255,255,.08);
+      border-color: rgba(255,255,255,.2);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+
+    #seeMoreBtn i {
+      transition: transform .3s ease;
+      display: inline-block;
+    }
+
+    #seeMoreBtn.expanded i {
+      transform: rotate(180deg);
+    }
   </style>
 </head>
 <body id="kt_app_body" data-kt-app-header-fixed="true" data-kt-app-header-fixed-mobile="true" data-kt-app-sidebar-enabled="true" data-kt-app-sidebar-fixed="true" data-kt-app-sidebar-hoverable="true" data-kt-app-sidebar-push-toolbar="true" data-kt-app-sidebar-push-footer="true" data-kt-app-toolbar-enabled="true" data-kt-app-aside-enabled="true" data-kt-app-aside-fixed="true" data-kt-app-aside-push-toolbar="true" data-kt-app-aside-push-footer="true" class="app-default">
@@ -690,7 +750,7 @@
 <!-- your existing page logic (unchanged) -->
 <script src="assets/js/custom/galaxy/publications.js" type="module"></script>
 
-<!-- Word cloud renderer: counts tag occurrences; fills card without overflow -->
+<!-- Word cloud renderer -->
 <script>
 (function(){
   const pubList = document.getElementById('publications_list');
@@ -813,6 +873,8 @@
   }, true);
 })();
 </script>
+
+<!-- Modal word cloud -->
 <script>
 (function(){
   const smallContainer = document.getElementById('rt_cloud_container');
@@ -921,7 +983,7 @@
 })();
 </script>
 
-<!-- Color-code research topic badges -->
+<!-- Color-code badges -->
 <script>
 (function(){
   const tagColorMap = new Map();
@@ -949,9 +1011,7 @@
       const tagText = badge.textContent || badge.getAttribute('data-topic') || badge.getAttribute('data-tag');
       if (!tagText || tagText.trim() === '—' || tagText.trim() === '') return;
 
-      // Skip citation badges - match patterns like "29 citations", "4 citations", etc.
       if (/^\d+\s*citation/i.test(tagText.trim()) || tagText.toLowerCase().includes('citation')) {
-        // Remove any color classes
         for (let i = 0; i < totalColors; i++) {
           badge.classList.remove(`badge-color-${i}`);
         }
@@ -959,22 +1019,18 @@
         return;
       }
 
-      // Remove existing color classes
       for (let i = 0; i < totalColors; i++) {
         badge.classList.remove(`badge-color-${i}`);
       }
       badge.classList.remove('badge-default');
 
-      // Add the appropriate color class
       const colorClass = getTagColor(tagText);
       badge.classList.add(`badge-color-${colorClass}`);
     });
   }
 
-  // Run on load
   colorCodeBadges();
 
-  // Watch for changes
   const publicationsList = document.getElementById('publications_list');
   if (publicationsList) {
     const observer = new MutationObserver(() => {
@@ -988,11 +1044,88 @@
     });
   }
 
-  // Also run after a short delay to catch any dynamically loaded content
   setTimeout(colorCodeBadges, 500);
   setTimeout(colorCodeBadges, 1000);
 
   window.colorCodeBadges = colorCodeBadges;
+})();
+</script>
+
+<!-- Show/Hide Publications - FINAL VERSION -->
+<script>
+(function(){
+  const INITIAL_SHOW = 12;
+  let showingAll = false;
+
+  function applyPublicationLimit() {
+    const publicationsList = document.getElementById('publications_list');
+    if (!publicationsList) return;
+
+    // Get all publication items
+    const allPubs = Array.from(publicationsList.children).filter(el => 
+      el.classList.contains('publication-item') && 
+      !el.textContent.includes('No publications yet')
+    );
+
+    // Remove existing button
+    const oldBtn = document.getElementById('seeMoreBtn');
+    if (oldBtn) oldBtn.remove();
+
+    // If 5 or fewer, show all
+    if (allPubs.length <= INITIAL_SHOW) {
+      allPubs.forEach(pub => pub.classList.remove('pub-hidden'));
+      return;
+    }
+
+    // Apply visibility
+    allPubs.forEach((pub, idx) => {
+      if (showingAll || idx < INITIAL_SHOW) {
+        pub.classList.remove('pub-hidden');
+      } else {
+        pub.classList.add('pub-hidden');
+      }
+    });
+
+    // Create button
+    const btn = document.createElement('button');
+    btn.id = 'seeMoreBtn';
+    btn.type = 'button';
+    if (showingAll) btn.classList.add('expanded');
+    
+    btn.innerHTML = showingAll
+      ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+      : '<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (' + (allPubs.length - INITIAL_SHOW) + ')';
+    
+    btn.onclick = function() {
+      showingAll = !showingAll;
+      applyPublicationLimit();
+      
+      if (!showingAll) {
+        publicationsList.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+
+    publicationsList.appendChild(btn);
+  }
+
+  // Run on intervals to catch dynamic loading
+  const intervals = [500, 1000, 1500, 2000, 2500, 3000];
+  intervals.forEach(delay => setTimeout(applyPublicationLimit, delay));
+
+  // Watch for DOM changes
+  const publicationsList = document.getElementById('publications_list');
+  if (publicationsList) {
+    const observer = new MutationObserver(() => {
+      setTimeout(applyPublicationLimit, 50);
+    });
+    
+    observer.observe(publicationsList, {
+      childList: true,
+      subtree: false
+    });
+  }
+
+  window.applyPublicationLimit = applyPublicationLimit;
 })();
 </script>
 
