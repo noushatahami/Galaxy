@@ -579,8 +579,6 @@
 									display:inline-block; 
 									padding:.4rem .75rem; 
 									border-radius:999px; 
-									background:rgba(255,255,255,.1);
-									border: 1px solid rgba(255,255,255,.15);
 									font-size: .875rem;
 									font-weight: 500;
 									transition: all .2s ease;
@@ -588,9 +586,71 @@
 								}
 								
 								.pill:hover {
-									background:rgba(255,255,255,.15);
 									transform: translateY(-1px);
 									box-shadow: 0 4px 12px rgba(0,0,0,.15);
+									filter: brightness(1.1);
+								}
+
+								/* Cohesive color palette for research area pills */
+								.pill-color-0 { 
+									background: rgba(231, 76, 60, 0.25) !important; 
+									border: 1px solid rgba(231, 76, 60, 0.4) !important; 
+									color: #e74c3c !important; 
+								}
+								.pill-color-1 { 
+									background: rgba(26, 188, 156, 0.25) !important; 
+									border: 1px solid rgba(26, 188, 156, 0.4) !important; 
+									color: #1abc9c !important; 
+								}
+								.pill-color-2 { 
+									background: rgba(155, 89, 182, 0.25) !important; 
+									border: 1px solid rgba(155, 89, 182, 0.4) !important; 
+									color: #9b59b6 !important; 
+								}
+								.pill-color-3 { 
+									background: rgba(243, 156, 18, 0.25) !important; 
+									border: 1px solid rgba(243, 156, 18, 0.4) !important; 
+									color: #f39c12 !important; 
+								}
+								.pill-color-4 { 
+									background: rgba(46, 204, 113, 0.25) !important; 
+									border: 1px solid rgba(46, 204, 113, 0.4) !important; 
+									color: #2ecc71 !important; 
+								}
+								.pill-color-5 { 
+									background: rgba(142, 68, 173, 0.25) !important; 
+									border: 1px solid rgba(142, 68, 173, 0.4) !important; 
+									color: #8e44ad !important; 
+								}
+								.pill-color-6 { 
+									background: rgba(52, 152, 219, 0.25) !important; 
+									border: 1px solid rgba(52, 152, 219, 0.4) !important; 
+									color: #3498db !important; 
+								}
+								.pill-color-7 { 
+									background: rgba(230, 126, 34, 0.25) !important; 
+									border: 1px solid rgba(230, 126, 34, 0.4) !important; 
+									color: #e67e22 !important; 
+								}
+								.pill-color-8 { 
+									background: rgba(192, 57, 43, 0.25) !important; 
+									border: 1px solid rgba(192, 57, 43, 0.4) !important; 
+									color: #c0392b !important; 
+								}
+								.pill-color-9 { 
+									background: rgba(41, 128, 185, 0.25) !important; 
+									border: 1px solid rgba(41, 128, 185, 0.4) !important; 
+									color: #2980b9 !important; 
+								}
+								.pill-color-10 { 
+									background: rgba(22, 160, 133, 0.25) !important; 
+									border: 1px solid rgba(22, 160, 133, 0.4) !important; 
+									color: #16a085 !important; 
+								}
+								.pill-color-11 { 
+									background: rgba(211, 84, 0, 0.25) !important; 
+									border: 1px solid rgba(211, 84, 0, 0.4) !important; 
+									color: #d35400 !important; 
 								}
 								
 								.card-3d .card-header .card-title::before {
@@ -1016,6 +1076,70 @@
 		<!--begin::Page-specific Javascript-->
 		<script src="assets/js/custom/galaxy/profile.js" type="module"></script>
 		<!--end::Page-specific Javascript-->
+
+		<!-- Color-code research area pills -->
+		<script>
+		(function(){
+			const tagColorMap = new Map();
+			let colorIndex = 0;
+			const totalColors = 12;
+
+			function getTagColor(tagText) {
+				const normalized = tagText.trim().toLowerCase();
+				
+				if (!tagColorMap.has(normalized)) {
+					tagColorMap.set(normalized, colorIndex % totalColors);
+					colorIndex++;
+				}
+				
+				return tagColorMap.get(normalized);
+			}
+
+			function colorCodePills() {
+				const researchAreasContainer = document.getElementById('research_areas_tags');
+				if (!researchAreasContainer) return;
+
+				const pills = researchAreasContainer.querySelectorAll('.pill');
+				
+				pills.forEach(pill => {
+					const tagText = pill.textContent || pill.getAttribute('data-tag') || pill.getAttribute('data-topic');
+					if (!tagText || tagText.trim() === '—' || tagText.trim() === '') return;
+
+					// Remove existing color classes
+					for (let i = 0; i < totalColors; i++) {
+						pill.classList.remove(`pill-color-${i}`);
+					}
+
+					// Add the appropriate color class
+					const colorClass = getTagColor(tagText);
+					pill.classList.add(`pill-color-${colorClass}`);
+				});
+			}
+
+			// Run on load
+			colorCodePills();
+
+			// Watch for changes
+			const researchAreasContainer = document.getElementById('research_areas_tags');
+			if (researchAreasContainer) {
+				const observer = new MutationObserver(() => {
+					colorCodePills();
+				});
+				
+				observer.observe(researchAreasContainer, {
+					childList: true,
+					subtree: true,
+					characterData: true
+				});
+			}
+
+			// Also run after a short delay to catch any dynamically loaded content
+			setTimeout(colorCodePills, 500);
+			setTimeout(colorCodePills, 1000);
+
+			window.colorCodePills = colorCodePills;
+		})();
+		</script>
 	</body>
 	<!--end::Body-->
 </html>
