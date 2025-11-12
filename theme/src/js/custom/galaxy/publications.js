@@ -98,7 +98,7 @@
     container.innerHTML = '<div class="text-gray-400">—</div>'; return;
   }
 
-  const LIMIT = 12;
+  const LIMIT = 10;
   let showAll = container.dataset.showAll === 'true';
 
   state.publications.forEach((p, index) => {

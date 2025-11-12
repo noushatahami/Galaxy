@@ -219,65 +219,11 @@
     }
 
     /* Cohesive muted color palette matching the blue theme */
+
     .badge-color-0 { 
-      background: rgba(231, 76, 60, 0.25) !important; 
-      border-color: rgba(231, 76, 60, 0.4) !important; 
-      color: #e74c3c !important; 
-    }
-    .badge-color-1 { 
-      background: rgba(26, 188, 156, 0.25) !important; 
-      border-color: rgba(26, 188, 156, 0.4) !important; 
-      color: #1abc9c !important; 
-    }
-    .badge-color-2 { 
-      background: rgba(155, 89, 182, 0.25) !important; 
-      border-color: rgba(155, 89, 182, 0.4) !important; 
-      color: #9b59b6 !important; 
-    }
-    .badge-color-3 { 
-      background: rgba(243, 156, 18, 0.25) !important; 
-      border-color: rgba(243, 156, 18, 0.4) !important; 
-      color: #f39c12 !important; 
-    }
-    .badge-color-4 { 
       background: rgba(46, 204, 113, 0.25) !important; 
       border-color: rgba(46, 204, 113, 0.4) !important; 
       color: #2ecc71 !important; 
-    }
-    .badge-color-5 { 
-      background: rgba(142, 68, 173, 0.25) !important; 
-      border-color: rgba(142, 68, 173, 0.4) !important; 
-      color: #8e44ad !important; 
-    }
-    .badge-color-6 { 
-      background: rgba(52, 152, 219, 0.25) !important; 
-      border-color: rgba(52, 152, 219, 0.4) !important; 
-      color: #3498db !important; 
-    }
-    .badge-color-7 { 
-      background: rgba(230, 126, 34, 0.25) !important; 
-      border-color: rgba(230, 126, 34, 0.4) !important; 
-      color: #e67e22 !important; 
-    }
-    .badge-color-8 { 
-      background: rgba(192, 57, 43, 0.25) !important; 
-      border-color: rgba(192, 57, 43, 0.4) !important; 
-      color: #c0392b !important; 
-    }
-    .badge-color-9 { 
-      background: rgba(41, 128, 185, 0.25) !important; 
-      border-color: rgba(41, 128, 185, 0.4) !important; 
-      color: #2980b9 !important; 
-    }
-    .badge-color-10 { 
-      background: rgba(22, 160, 133, 0.25) !important; 
-      border-color: rgba(22, 160, 133, 0.4) !important; 
-      color: #16a085 !important; 
-    }
-    .badge-color-11 { 
-      background: rgba(211, 84, 0, 0.25) !important; 
-      border-color: rgba(211, 84, 0, 0.4) !important; 
-      color: #d35400 !important; 
     }
 
     /* See More button styling */
@@ -985,7 +931,7 @@
 (function(){
   const tagColorMap = new Map();
   let colorIndex = 0;
-  const totalColors = 12;
+  const totalColors = 1;
 
   function getTagColor(tagText) {
     const normalized = tagText.trim().toLowerCase();
@@ -1051,7 +997,7 @@
 <!-- Show/Hide Publications - FINAL VERSION -->
 <script>
 (function(){
-  const INITIAL_SHOW = 12;
+  const INITIAL_SHOW = 10;
   let showingAll = false;
 
   function applyPublicationLimit() {
