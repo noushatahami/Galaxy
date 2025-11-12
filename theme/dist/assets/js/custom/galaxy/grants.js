@@ -220,52 +220,129 @@
   }
 
   function renderGrantsTable() {
-    const tbody = $('#grants_tbody');
-    const countBadge = $('#grants_count');
-    if (!tbody) return;
+  const tbody = $('#grants_tbody');
+  const countBadge = $('#grants_count');
+  if (!tbody) return;
 
-    if (!state.grants?.length) {
-      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i class="ki-duotone ki-information-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No grants found</div></td></tr>';
-      if (countBadge) countBadge.textContent = '0 grants';
-      return;
-    }
+  const LIMIT = 10;
+  let showAll = tbody.dataset.showAll === 'true';
 
-    if (countBadge) countBadge.textContent = `${state.grants.length} grant${state.grants.length !== 1 ? 's' : ''}`;
-
-    tbody.innerHTML = state.grants.map((g, idx) => {
-      const awarded = amountAwarded(g);
-      const received = amountReceived(g);
-      const spent = amountSpent(g);
-
-      return `<tr class="grant-row" data-index="${idx}">
-        <td>
-          <div class="grant-cell-title">${g.title || '—'}</div>
-          <div class="grant-cell-meta">${g.id || g.grantId || 'No ID'}</div>
-        </td>
-        <td>
-          <div class="grant-cell-agency">${g.agency || '—'}</div>
-          <div class="grant-cell-type">${g.type || 'Not specified'}</div>
-        </td>
-        <td>
-          <div class="grant-amount-primary">${fmtMoneyShort(awarded)}</div>
-          <div class="grant-amount-label">Awarded</div>
-        </td>
-        <td>
-          <div class="grant-amount-primary">${fmtMoneyShort(received)}</div>
-          <div class="grant-amount-label">Received</div>
-        </td>
-        <td>
-          <div class="grant-amount-primary">${fmtMoneyShort(spent)}</div>
-          <div class="grant-amount-label">Spent</div>
-        </td>
-        <td class="text-center">
-          <span class="grant-status-badge ${received > 0 ? 'grant-status-active' : 'grant-status-pending'}">${received > 0 ? 'Active' : 'Pending'}</span>
-        </td>
-      </tr>`;
-    }).join('');
-
-    wireRowClicks();
+  if (!state.grants?.length) {
+    tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><i class="ki-duotone ki-information-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No grants found</div></td></tr>';
+    if (countBadge) countBadge.textContent = '0 grants';
+    tbody.dataset.showAll = 'false';
+    return;
   }
+
+  if (countBadge) {
+    countBadge.textContent = `${state.grants.length} grant${state.grants.length !== 1 ? 's' : ''}`;
+  }
+
+  // Build rows with optional hiding past LIMIT
+  tbody.innerHTML = state.grants.map((g, idx) => {
+    const awarded  = amountAwarded(g);
+    const received = amountReceived(g);
+    const spent    = amountSpent(g);
+
+    const isHidden = !showAll && idx >= LIMIT;
+    const extraClass = isHidden ? ' grant-hidden-item' : '';
+    const style = isHidden ? ' style="display:none;"' : '';
+
+    return `<tr class="grant-row${extraClass}" data-index="${idx}"${style}>
+      <td>
+        <div class="grant-cell-title">${g.title || '—'}</div>
+        <div class="grant-cell-meta">${g.id || g.grantId || 'No ID'}</div>
+      </td>
+      <td>
+        <div class="grant-cell-agency">${g.agency || '—'}</div>
+        <div class="grant-cell-type">${g.type || 'Not specified'}</div>
+      </td>
+      <td>
+        <div class="grant-amount-primary">${fmtMoneyShort(awarded)}</div>
+        <div class="grant-amount-label">Awarded</div>
+      </td>
+      <td>
+        <div class="grant-amount-primary">${fmtMoneyShort(received)}</div>
+        <div class="grant-amount-label">Received</div>
+      </td>
+      <td>
+        <div class="grant-amount-primary">${fmtMoneyShort(spent)}</div>
+        <div class="grant-amount-label">Spent</div>
+      </td>
+      <td class="text-center">
+        <span class="grant-status-badge ${received > 0 ? 'grant-status-active' : 'grant-status-pending'}">
+          ${received > 0 ? 'Active' : 'Pending'}
+        </span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Add Show More / Show Less row if needed
+  if (state.grants.length > LIMIT) {
+    const remaining = state.grants.length - LIMIT;
+
+    const toggleRow = document.createElement('tr');
+    toggleRow.className = 'grants-toggle-row';
+
+    const td = document.createElement('td');
+    td.colSpan = 6;
+
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-light w-100';
+    btn.style.cssText = `
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.12);
+      color: rgba(255,255,255,.8);
+      font-weight: 600;
+      transition: all .3s ease;
+    `;
+
+    btn.innerHTML = showAll
+      ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+      : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${remaining})`;
+
+    btn.addEventListener('click', () => {
+      showAll = !showAll;
+      tbody.dataset.showAll = showAll;
+
+      const hiddenRows = tbody.querySelectorAll('.grant-hidden-item');
+      hiddenRows.forEach(row => {
+        row.style.display = showAll ? '' : 'none';
+      });
+
+      btn.innerHTML = showAll
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${remaining})`;
+
+      // Scroll to top of card when collapsing
+      if (!showAll) {
+        const card = tbody.closest('.card');
+        if (card) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
+    });
+
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255,255,255,.08)';
+      btn.style.transform = 'translateY(-2px)';
+    });
+
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255,255,255,.05)';
+      btn.style.transform = 'translateY(0)';
+    });
+
+    td.appendChild(btn);
+    toggleRow.appendChild(td);
+    tbody.appendChild(toggleRow);
+  }
+
+  wireRowClicks();
+}
+
 
   function renderLastAwarded() {
     const container = $('#last_awarded_grant'); 
