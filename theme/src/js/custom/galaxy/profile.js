@@ -103,15 +103,94 @@
   }
 
   function renderSimpleList(sel, key) {
-    const ul = $(sel); if (!ul) return;
-    const arr = state.profile[key] || [];
-    ul.innerHTML = '';
+  const ul = $(sel); if (!ul) return;
+  const arr = state.profile[key] || [];
+  ul.innerHTML = '';
+  
+  if (!arr.length) {
+    ul.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-information-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No items yet</div>';
+    return;
+  }
+  
+  // Special handling for positions with Show More/Less
+  if (key === 'positions' || key === 'education') {
+    const LIMIT = 5;
+    let showAll = ul.dataset.showAll === 'true';
     
-    if (!arr.length) {
-      ul.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-information-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No items yet</div>';
-      return;
+    arr.forEach((v, index) => {
+      const li = H('li', 'info-list-item');
+      
+      // Hide items beyond limit
+      if (!showAll && index >= LIMIT) {
+        li.style.display = 'none';
+        li.classList.add('position-hidden-item');
+      }
+      
+      li.innerHTML = `
+        <div class="info-list-item-icon">
+          <i class="ki-duotone ki-check fs-3"><span class="path1"></span><span class="path2"></span></i>
+        </div>
+        <div class="info-list-item-content">
+          <div class="info-list-item-text">${v}</div>
+        </div>
+      `;
+      ul.appendChild(li);
+    });
+    
+    // Add show more/less button if needed
+    if (arr.length > LIMIT) {
+      const btnWrapper = H('div', 'mt-3', '');
+      const btn = H('button', 'btn btn-sm btn-light w-100', '');
+      btn.style.cssText = `
+        padding: 0.75rem;
+        border-radius: 10px;
+        background: rgba(255,255,255,.05);
+        border: 1px solid rgba(255,255,255,.12);
+        color: rgba(255,255,255,.8);
+        font-weight: 600;
+        transition: all .3s ease;
+      `;
+      
+      btn.innerHTML = showAll 
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+      
+      btn.addEventListener('click', () => {
+        showAll = !showAll;
+        ul.dataset.showAll = showAll;
+        
+        // Toggle visibility
+        const hiddenItems = ul.querySelectorAll('.position-hidden-item');
+        hiddenItems.forEach(item => {
+          item.style.display = showAll ? '' : 'none';
+        });
+        
+        // Update button
+        btn.innerHTML = showAll 
+          ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+          : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+        
+        // Scroll to top when collapsing
+        if (!showAll) {
+          ul.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+      
+      btn.addEventListener('mouseenter', () => {
+        btn.style.background = 'rgba(255,255,255,.08)';
+        btn.style.transform = 'translateY(-2px)';
+      });
+      
+      btn.addEventListener('mouseleave', () => {
+        btn.style.background = 'rgba(255,255,255,.05)';
+        btn.style.transform = 'translateY(0)';
+      });
+      
+      btnWrapper.appendChild(btn);
+      ul.appendChild(btnWrapper);
     }
-    
+  } else {
+    // Default rendering for other lists
     arr.forEach(v => {
       const li = H('li', 'info-list-item');
       li.innerHTML = `
@@ -125,28 +204,92 @@
       ul.appendChild(li);
     });
   }
+}
 
   function renderSocial() {
-    const container = $('#social_media_view'); 
-    if (!container) return;
+  const container = $('#social_media_view'); 
+  if (!container) return;
+  
+  const entries = Object.entries(state.profile.social_media || {});
+  container.innerHTML = '';
+  
+  if (!entries.length) {
+    container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-text-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No social media links</div>';
+    return;
+  }
+  
+  const LIMIT = 5;
+  let showAll = container.dataset.showAll === 'true';
+  
+  entries.forEach(([platform, handle], index) => {
+    const item = H('div', 'social-item');
     
-    const entries = Object.entries(state.profile.social_media || {});
-    container.innerHTML = '';
-    
-    if (!entries.length) {
-      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-text-2 d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No social media links</div>';
-      return;
+    // Hide items beyond limit
+    if (!showAll && index >= LIMIT) {
+      item.style.display = 'none';
+      item.classList.add('social-hidden-item');
     }
     
-    entries.forEach(([platform, handle]) => {
-      const item = H('div', 'social-item');
-      item.innerHTML = `
-        <span class="social-platform">${platform}</span>
-        <a href="${handle}" target="_blank" class="social-handle">${handle}</a>
-      `;
-      container.appendChild(item);
+    item.innerHTML = `
+      <span class="social-platform">${platform}</span>
+      <a href="${handle}" target="_blank" class="social-handle">${handle}</a>
+    `;
+    container.appendChild(item);
+  });
+  
+  // Add show more/less button if needed
+  if (entries.length > LIMIT) {
+    const btnWrapper = H('div', 'mt-3', '');
+    const btn = H('button', 'btn btn-sm btn-light w-100', '');
+    btn.style.cssText = `
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.12);
+      color: rgba(255,255,255,.8);
+      font-weight: 600;
+      transition: all .3s ease;
+    `;
+    
+    btn.innerHTML = showAll 
+      ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+      : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${entries.length - LIMIT})`;
+    
+    btn.addEventListener('click', () => {
+      showAll = !showAll;
+      container.dataset.showAll = showAll;
+      
+      // Toggle visibility
+      const hiddenItems = container.querySelectorAll('.social-hidden-item');
+      hiddenItems.forEach(item => {
+        item.style.display = showAll ? '' : 'none';
+      });
+      
+      // Update button
+      btn.innerHTML = showAll 
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${entries.length - LIMIT})`;
+      
+      // Scroll to top when collapsing
+      if (!showAll) {
+        container.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
+    
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255,255,255,.08)';
+      btn.style.transform = 'translateY(-2px)';
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255,255,255,.05)';
+      btn.style.transform = 'translateY(0)';
+    });
+    
+    btnWrapper.appendChild(btn);
+    container.appendChild(btnWrapper);
   }
+}
 
   function renderResearchAreas() {
     const w = $('#research_areas_tags'); if (!w) return;
@@ -155,65 +298,191 @@
   }
 
   function renderAwards() {
-    const container = $('#awards_list'); 
-    if (!container) return;
+  const container = $('#awards_list'); 
+  if (!container) return;
+  
+  const arr = state.profile.awards || [];
+  container.innerHTML = '';
+  
+  if (!arr.length) {
+    container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-award d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No awards yet</div>';
+    return;
+  }
+  
+  const LIMIT = 5;
+  let showAll = container.dataset.showAll === 'true';
+  
+  arr.forEach((award, index) => {
+    const item = H('div', 'award-item');
     
-    const arr = state.profile.awards || [];
-    container.innerHTML = '';
-    
-    if (!arr.length) {
-      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-award d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No awards yet</div>';
-      return;
+    // Hide items beyond limit
+    if (!showAll && index >= LIMIT) {
+      item.style.display = 'none';
+      item.classList.add('award-hidden-item');
     }
     
-    arr.forEach(award => {
-      const item = H('div', 'award-item');
-      item.innerHTML = `
-        <span class="award-year">${award.year || '—'}</span>
-        <span class="award-title">${award.title || 'Untitled'}</span>
-      `;
-      container.appendChild(item);
+    item.innerHTML = `
+      <span class="award-year">${award.year || '—'}</span>
+      <span class="award-title">${award.title || 'Untitled'}</span>
+    `;
+    container.appendChild(item);
+  });
+  
+  // Add show more/less button if needed
+  if (arr.length > LIMIT) {
+    const btnWrapper = H('div', 'mt-3', '');
+    const btn = H('button', 'btn btn-sm btn-light w-100', '');
+    btn.style.cssText = `
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.12);
+      color: rgba(255,255,255,.8);
+      font-weight: 600;
+      transition: all .3s ease;
+    `;
+    
+    btn.innerHTML = showAll 
+      ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+      : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+    
+    btn.addEventListener('click', () => {
+      showAll = !showAll;
+      container.dataset.showAll = showAll;
+      
+      // Toggle visibility
+      const hiddenItems = container.querySelectorAll('.award-hidden-item');
+      hiddenItems.forEach(item => {
+        item.style.display = showAll ? '' : 'none';
+      });
+      
+      // Update button
+      btn.innerHTML = showAll 
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+      
+      // Scroll to top when collapsing
+      if (!showAll) {
+        container.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
+    
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255,255,255,.08)';
+      btn.style.transform = 'translateY(-2px)';
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255,255,255,.05)';
+      btn.style.transform = 'translateY(0)';
+    });
+    
+    btnWrapper.appendChild(btn);
+    container.appendChild(btnWrapper);
   }
+}
 
   function renderPatents() {
-    const container = $('#patents_list'); 
-    if (!container) return;
+  const container = $('#patents_list'); 
+  if (!container) return;
+  
+  const arr = state.profile.patents || [];
+  container.innerHTML = '';
+  
+  if (!arr.length) {
+    container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-document d-block"><span class="path1"></span><span class="path2"></span></i>No patents yet</div>';
+    return;
+  }
+  
+  const LIMIT = 5;
+  let showAll = container.dataset.showAll === 'true';
+  
+  arr.forEach((pt, index) => {
+    const card = H('div', 'patent-card');
     
-    const arr = state.profile.patents || [];
-    container.innerHTML = '';
-    
-    if (!arr.length) {
-      container.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-document d-block"><span class="path1"></span><span class="path2"></span></i>No patents yet</div>';
-      return;
+    // Hide items beyond limit
+    if (!showAll && index >= LIMIT) {
+      card.style.display = 'none';
+      card.classList.add('patent-hidden-item');
     }
     
-    arr.forEach(pt => {
-      const card = H('div', 'patent-card');
-      const inventors = Array.isArray(pt.inventors) 
-        ? pt.inventors.filter(Boolean).join(', ') 
-        : String(pt.inventors || '').split(',').map(s => s.trim()).filter(Boolean).join(', ');
-      
-      const statusClass = (pt.status || '').toLowerCase() === 'granted' 
-        ? 'patent-status-granted' 
-        : 'patent-status-pending';
-      
-      card.innerHTML = `
-        <div class="patent-header">
-          <div class="patent-title">${pt.title || 'Untitled Patent'}</div>
-          <div class="patent-number">${pt.number || 'No number'}</div>
+    const inventors = Array.isArray(pt.inventors) 
+      ? pt.inventors.filter(Boolean).join(', ') 
+      : String(pt.inventors || '').split(',').map(s => s.trim()).filter(Boolean).join(', ');
+    
+    const statusClass = (pt.status || '').toLowerCase() === 'granted' 
+      ? 'patent-status-granted' 
+      : 'patent-status-pending';
+    
+    card.innerHTML = `
+      <div class="patent-header">
+        <div class="patent-title">${pt.title || 'Untitled Patent'}</div>
+        <div class="patent-number">${pt.number || 'No number'}</div>
+      </div>
+      <div class="patent-meta">
+        <div><strong>Inventors:</strong> ${inventors || 'Not specified'}</div>
+        <div>
+          <strong>Filed:</strong> ${pt.filed || 'Unknown'}
+          <span class="patent-status ${statusClass}">${pt.status || 'Pending'}</span>
         </div>
-        <div class="patent-meta">
-          <div><strong>Inventors:</strong> ${inventors || 'Not specified'}</div>
-          <div>
-            <strong>Filed:</strong> ${pt.filed || 'Unknown'}
-            <span class="patent-status ${statusClass}">${pt.status || 'Pending'}</span>
-          </div>
-        </div>
-      `;
-      container.appendChild(card);
+      </div>
+    `;
+    container.appendChild(card);
+  });
+  
+  // Add show more/less button if needed
+  if (arr.length > LIMIT) {
+    const btnWrapper = H('div', 'mt-3', '');
+    const btn = H('button', 'btn btn-sm btn-light w-100', '');
+    btn.style.cssText = `
+      padding: 0.75rem;
+      border-radius: 10px;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.12);
+      color: rgba(255,255,255,.8);
+      font-weight: 600;
+      transition: all .3s ease;
+    `;
+    
+    btn.innerHTML = showAll 
+      ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+      : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+    
+    btn.addEventListener('click', () => {
+      showAll = !showAll;
+      container.dataset.showAll = showAll;
+      
+      // Toggle visibility
+      const hiddenItems = container.querySelectorAll('.patent-hidden-item');
+      hiddenItems.forEach(item => {
+        item.style.display = showAll ? '' : 'none';
+      });
+      
+      // Update button
+      btn.innerHTML = showAll 
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+      
+      // Scroll to top when collapsing
+      if (!showAll) {
+        container.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     });
+    
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(255,255,255,.08)';
+      btn.style.transform = 'translateY(-2px)';
+    });
+    
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(255,255,255,.05)';
+      btn.style.transform = 'translateY(0)';
+    });
+    
+    btnWrapper.appendChild(btn);
+    container.appendChild(btnWrapper);
   }
+}
 
   function renderPartners() {
     const container = $('#partners_view');
@@ -239,110 +508,300 @@
   }
 
   function renderAll() {
-    renderHeader();
-    renderSocial();
+  renderHeader();
+  renderSocial();
+  
+  // Media mentions with Show More/Less
+const mentionsUl = $('#media_mentions_list');
+if (mentionsUl) {
+  mentionsUl.className = 'info-list';
+  const arr = state.profile.media_mentions || [];
+  mentionsUl.innerHTML = '';
+  
+  if (!arr.length) {
+    mentionsUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-programming d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No media mentions</div>';
+  } else {
+    const LIMIT = 5;
+    let showAll = mentionsUl.dataset.showAll === 'true';
     
-    // Media mentions
-    const mentionsUl = $('#media_mentions_list');
-    if (mentionsUl) {
-      mentionsUl.className = 'info-list';
-      const arr = state.profile.media_mentions || [];
-      mentionsUl.innerHTML = '';
+    arr.forEach((v, index) => {
+      const li = H('li', 'info-list-item');
       
-      if (!arr.length) {
-        mentionsUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-message-programming d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No media mentions</div>';
-      } else {
-        arr.forEach(v => {
-          const li = H('li', 'info-list-item');
-          li.innerHTML = `
-            <div class="info-list-item-icon">
-              <i class="ki-duotone ki-message-text fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
-            </div>
-            <div class="info-list-item-content">
-              <div class="info-list-item-text">${v}</div>
-            </div>
-          `;
-          mentionsUl.appendChild(li);
-        });
+      // Hide items beyond limit
+      if (!showAll && index >= LIMIT) {
+        li.style.display = 'none';
+        li.classList.add('mention-hidden-item');
       }
-    }
-    
-    renderResearchAreas();
-    renderAwards();
-    renderPatents();
-    
-    // Mentors and Colleagues with proper list styling
-    const mentorsUl = $('#mentors_list');
-    if (mentorsUl) {
-      mentorsUl.className = 'info-list';
-      const arr = state.profile.mentors || [];
-      mentorsUl.innerHTML = '';
       
-      if (!arr.length) {
-        mentorsUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-user d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No mentors listed</div>';
-      } else {
-        arr.forEach(v => {
-          const li = H('li', 'info-list-item');
-          li.innerHTML = `
-            <div class="info-list-item-icon">
-              <i class="ki-duotone ki-user fs-3"><span class="path1"></span><span class="path2"></span></i>
-            </div>
-            <div class="info-list-item-content">
-              <div class="info-list-item-text">${v}</div>
-            </div>
-          `;
-          mentorsUl.appendChild(li);
-        });
-      }
-    }
+      li.innerHTML = `
+        <div class="info-list-item-icon">
+          <i class="ki-duotone ki-message-text fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>
+        </div>
+        <div class="info-list-item-content">
+          <div class="info-list-item-text">${v}</div>
+        </div>
+      `;
+      mentionsUl.appendChild(li);
+    });
     
-    const colleaguesUl = $('#colleagues_list');
-    if (colleaguesUl) {
-      colleaguesUl.className = 'info-list';
-      const arr = state.profile.colleagues || [];
-      colleaguesUl.innerHTML = '';
+    // Add show more/less button if needed
+    if (arr.length > LIMIT) {
+      const btnWrapper = H('div', 'mt-3', '');
+      const btn = H('button', 'btn btn-sm btn-light w-100', '');
+      btn.style.cssText = `
+        padding: 0.75rem;
+        border-radius: 10px;
+        background: rgba(255,255,255,.05);
+        border: 1px solid rgba(255,255,255,.12);
+        color: rgba(255,255,255,.8);
+        font-weight: 600;
+        transition: all .3s ease;
+      `;
       
-      if (!arr.length) {
-        colleaguesUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-circle d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No colleagues listed</div>';
-      } else {
-        arr.forEach(v => {
-          const li = H('li', 'info-list-item');
-          li.innerHTML = `
-            <div class="info-list-item-icon">
-              <i class="ki-duotone ki-profile-user fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>
-            </div>
-            <div class="info-list-item-content">
-              <div class="info-list-item-text">${v}</div>
-            </div>
-          `;
-          colleaguesUl.appendChild(li);
+      btn.innerHTML = showAll 
+        ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+        : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+      
+      btn.addEventListener('click', () => {
+        showAll = !showAll;
+        mentionsUl.dataset.showAll = showAll;
+        
+        // Toggle visibility
+        const hiddenItems = mentionsUl.querySelectorAll('.mention-hidden-item');
+        hiddenItems.forEach(item => {
+          item.style.display = showAll ? '' : 'none';
         });
-      }
+        
+        // Update button
+        btn.innerHTML = showAll 
+          ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+          : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+        
+        // Scroll to top when collapsing
+        if (!showAll) {
+          mentionsUl.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+      
+      btn.addEventListener('mouseenter', () => {
+        btn.style.background = 'rgba(255,255,255,.08)';
+        btn.style.transform = 'translateY(-2px)';
+      });
+      
+      btn.addEventListener('mouseleave', () => {
+        btn.style.background = 'rgba(255,255,255,.05)';
+        btn.style.transform = 'translateY(0)';
+      });
+      
+      btnWrapper.appendChild(btn);
+      mentionsUl.appendChild(btnWrapper);
     }
-    
-    renderPartners();
-    
-    // Right column with proper list styling
-    const positionsUl = $('#positions_list');
-    if (positionsUl) {
-      positionsUl.className = 'info-list';
-      renderSimpleList('#positions_list', 'positions');
-    }
-    
-    const educationUl = $('#education_list');
-    if (educationUl) {
-      educationUl.className = 'info-list';
-      renderSimpleList('#education_list', 'education');
-    }
-    
-    const membershipsUl = $('#memberships_list');
-    if (membershipsUl) {
-      membershipsUl.className = 'info-list';
-      renderSimpleList('#memberships_list', 'memberships');
-    }
-    
-    reflectEditMode();
   }
+}
+  
+  renderResearchAreas();
+  renderAwards();
+  renderPatents();
+  
+  // Mentors with Show More/Less
+  const mentorsUl = $('#mentors_list');
+  if (mentorsUl) {
+    mentorsUl.className = 'info-list';
+    const arr = state.profile.mentors || [];
+    mentorsUl.innerHTML = '';
+    
+    if (!arr.length) {
+      mentorsUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-user d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>No mentors listed</div>';
+    } else {
+      const LIMIT = 5;
+      let showAll = mentorsUl.dataset.showAll === 'true';
+      
+      arr.forEach((v, index) => {
+        const li = H('li', 'info-list-item');
+        
+        // Hide items beyond limit
+        if (!showAll && index >= LIMIT) {
+          li.style.display = 'none';
+          li.classList.add('mentor-hidden-item');
+        }
+        
+        li.innerHTML = `
+          <div class="info-list-item-icon">
+            <i class="ki-duotone ki-user fs-3"><span class="path1"></span><span class="path2"></span></i>
+          </div>
+          <div class="info-list-item-content">
+            <div class="info-list-item-text">${v}</div>
+          </div>
+        `;
+        mentorsUl.appendChild(li);
+      });
+      
+      // Add show more/less button if needed
+      if (arr.length > LIMIT) {
+        const btnWrapper = H('div', 'mt-3', '');
+        const btn = H('button', 'btn btn-sm btn-light w-100', '');
+        btn.style.cssText = `
+          padding: 0.75rem;
+          border-radius: 10px;
+          background: rgba(255,255,255,.05);
+          border: 1px solid rgba(255,255,255,.12);
+          color: rgba(255,255,255,.8);
+          font-weight: 600;
+          transition: all .3s ease;
+        `;
+        
+        btn.innerHTML = showAll 
+          ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+          : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+        
+        btn.addEventListener('click', () => {
+          showAll = !showAll;
+          mentorsUl.dataset.showAll = showAll;
+          
+          // Toggle visibility
+          const hiddenItems = mentorsUl.querySelectorAll('.mentor-hidden-item');
+          hiddenItems.forEach(item => {
+            item.style.display = showAll ? '' : 'none';
+          });
+          
+          // Update button
+          btn.innerHTML = showAll 
+            ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+            : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+          
+          // Scroll to top when collapsing
+          if (!showAll) {
+            mentorsUl.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+        
+        btn.addEventListener('mouseenter', () => {
+          btn.style.background = 'rgba(255,255,255,.08)';
+          btn.style.transform = 'translateY(-2px)';
+        });
+        
+        btn.addEventListener('mouseleave', () => {
+          btn.style.background = 'rgba(255,255,255,.05)';
+          btn.style.transform = 'translateY(0)';
+        });
+        
+        btnWrapper.appendChild(btn);
+        mentorsUl.appendChild(btnWrapper);
+      }
+    }
+  }
+  
+  // Colleagues with Show More/Less
+  const colleaguesUl = $('#colleagues_list');
+  if (colleaguesUl) {
+    colleaguesUl.className = 'info-list';
+    const arr = state.profile.colleagues || [];
+    colleaguesUl.innerHTML = '';
+    
+    if (!arr.length) {
+      colleaguesUl.innerHTML = '<div class="empty-state"><i class="ki-duotone ki-profile-circle d-block"><span class="path1"></span><span class="path2"></span><span class="path3"></span></i>No colleagues listed</div>';
+    } else {
+      const LIMIT = 5;
+      let showAll = colleaguesUl.dataset.showAll === 'true';
+      
+      arr.forEach((v, index) => {
+        const li = H('li', 'info-list-item');
+        
+        // Hide items beyond limit
+        if (!showAll && index >= LIMIT) {
+          li.style.display = 'none';
+          li.classList.add('colleague-hidden-item');
+        }
+        
+        li.innerHTML = `
+          <div class="info-list-item-icon">
+            <i class="ki-duotone ki-profile-user fs-3"><span class="path1"></span><span class="path2"></span><span class="path3"></span><span class="path4"></span></i>
+          </div>
+          <div class="info-list-item-content">
+            <div class="info-list-item-text">${v}</div>
+          </div>
+        `;
+        colleaguesUl.appendChild(li);
+      });
+      
+      // Add show more/less button if needed
+      if (arr.length > LIMIT) {
+        const btnWrapper = H('div', 'mt-3', '');
+        const btn = H('button', 'btn btn-sm btn-light w-100', '');
+        btn.style.cssText = `
+          padding: 0.75rem;
+          border-radius: 10px;
+          background: rgba(255,255,255,.05);
+          border: 1px solid rgba(255,255,255,.12);
+          color: rgba(255,255,255,.8);
+          font-weight: 600;
+          transition: all .3s ease;
+        `;
+        
+        btn.innerHTML = showAll 
+          ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+          : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+        
+        btn.addEventListener('click', () => {
+          showAll = !showAll;
+          colleaguesUl.dataset.showAll = showAll;
+          
+          // Toggle visibility
+          const hiddenItems = colleaguesUl.querySelectorAll('.colleague-hidden-item');
+          hiddenItems.forEach(item => {
+            item.style.display = showAll ? '' : 'none';
+          });
+          
+          // Update button
+          btn.innerHTML = showAll 
+            ? '<i class="ki-duotone ki-arrow-up fs-3"><span class="path1"></span><span class="path2"></span></i> Show Less'
+            : `<i class="ki-duotone ki-arrow-down fs-3"><span class="path1"></span><span class="path2"></span></i> Show More (${arr.length - LIMIT})`;
+          
+          // Scroll to top when collapsing
+          if (!showAll) {
+            colleaguesUl.closest('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+        
+        btn.addEventListener('mouseenter', () => {
+          btn.style.background = 'rgba(255,255,255,.08)';
+          btn.style.transform = 'translateY(-2px)';
+        });
+        
+        btn.addEventListener('mouseleave', () => {
+          btn.style.background = 'rgba(255,255,255,.05)';
+          btn.style.transform = 'translateY(0)';
+        });
+        
+        btnWrapper.appendChild(btn);
+        colleaguesUl.appendChild(btnWrapper);
+      }
+    }
+  }
+  
+  renderPartners();
+  
+  // Right column with proper list styling
+  const positionsUl = $('#positions_list');
+  if (positionsUl) {
+    positionsUl.className = 'info-list';
+    renderSimpleList('#positions_list', 'positions');
+  }
+  
+  const educationUl = $('#education_list');
+  if (educationUl) {
+    educationUl.className = 'info-list';
+    renderSimpleList('#education_list', 'education');
+  }
+  
+  const membershipsUl = $('#memberships_list');
+  if (membershipsUl) {
+    membershipsUl.className = 'info-list';
+    renderSimpleList('#memberships_list', 'memberships');
+  }
+  
+  reflectEditMode();
+}
 
   // Force-paint with a plain profile object
   function paintProfileImmediate(profile){
