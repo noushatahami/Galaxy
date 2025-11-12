@@ -192,21 +192,118 @@
       transform: translateX(4px);
     }
 
-    /* Badge styling */
+    /* Badge styling with color coding */
     .badge {
       padding: .4rem .75rem;
       border-radius: 999px;
-      background: rgba(255,255,255,.1);
-      border: 1px solid rgba(255,255,255,.15);
       font-size: .875rem;
       font-weight: 500;
       transition: all .2s ease;
+      border: 1px solid rgba(255,255,255,.15);
     }
     .badge:hover {
-      background: rgba(255,255,255,.15);
       transform: translateY(-1px);
       box-shadow: 0 4px 12px rgba(0,0,0,.15);
+      filter: brightness(1.1);
     }
+
+    /* Color classes for badges - full color backgrounds */
+  /* Badge styling with color coding */
+.badge {
+  padding: .4rem .75rem;
+  border-radius: 999px;
+  font-size: .875rem;
+  font-weight: 500;
+  transition: all .2s ease;
+}
+.badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  filter: brightness(1.15);
+}
+
+/* Badge styling with color coding */
+.badge {
+  padding: .4rem .75rem;
+  border-radius: 999px;
+  font-size: .875rem;
+  font-weight: 500;
+  transition: all .2s ease;
+}
+.badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  filter: brightness(1.1);
+}
+
+/* Default badge style for non-topic badges (like citations) */
+.badge-default {
+  background: rgba(30, 54, 100, 0.3) !important;
+  border: 1px solid rgba(69, 134, 231, 0.45) !important;
+  color: #4c99f0 !important;
+}
+
+/* Cohesive muted color palette matching the blue theme */
+.badge-color-0 { 
+  background: rgba(231, 76, 60, 0.25) !important; 
+  border-color: rgba(231, 76, 60, 0.4) !important; 
+  color: #e74c3c !important; 
+}
+.badge-color-1 { 
+  background: rgba(26, 188, 156, 0.25) !important; 
+  border-color: rgba(26, 188, 156, 0.4) !important; 
+  color: #1abc9c !important; 
+}
+.badge-color-2 { 
+  background: rgba(155, 89, 182, 0.25) !important; 
+  border-color: rgba(155, 89, 182, 0.4) !important; 
+  color: #9b59b6 !important; 
+}
+.badge-color-3 { 
+  background: rgba(243, 156, 18, 0.25) !important; 
+  border-color: rgba(243, 156, 18, 0.4) !important; 
+  color: #f39c12 !important; 
+}
+.badge-color-4 { 
+  background: rgba(46, 204, 113, 0.25) !important; 
+  border-color: rgba(46, 204, 113, 0.4) !important; 
+  color: #2ecc71 !important; 
+}
+.badge-color-5 { 
+  background: rgba(142, 68, 173, 0.25) !important; 
+  border-color: rgba(142, 68, 173, 0.4) !important; 
+  color: #8e44ad !important; 
+}
+.badge-color-6 { 
+  background: rgba(52, 152, 219, 0.25) !important; 
+  border-color: rgba(52, 152, 219, 0.4) !important; 
+  color: #3498db !important; 
+}
+.badge-color-7 { 
+  background: rgba(230, 126, 34, 0.25) !important; 
+  border-color: rgba(230, 126, 34, 0.4) !important; 
+  color: #e67e22 !important; 
+}
+.badge-color-8 { 
+  background: rgba(192, 57, 43, 0.25) !important; 
+  border-color: rgba(192, 57, 43, 0.4) !important; 
+  color: #c0392b !important; 
+}
+.badge-color-9 { 
+  background: rgba(41, 128, 185, 0.25) !important; 
+  border-color: rgba(41, 128, 185, 0.4) !important; 
+  color: #2980b9 !important; 
+}
+.badge-color-10 { 
+  background: rgba(22, 160, 133, 0.25) !important; 
+  border-color: rgba(22, 160, 133, 0.4) !important; 
+  color: #16a085 !important; 
+}
+.badge-color-11 { 
+  background: rgba(211, 84, 0, 0.25) !important; 
+  border-color: rgba(211, 84, 0, 0.4) !important; 
+  color: #d35400 !important; 
+}
   </style>
 </head>
 <body id="kt_app_body" data-kt-app-header-fixed="true" data-kt-app-header-fixed-mobile="true" data-kt-app-sidebar-enabled="true" data-kt-app-sidebar-fixed="true" data-kt-app-sidebar-hoverable="true" data-kt-app-sidebar-push-toolbar="true" data-kt-app-sidebar-push-footer="true" data-kt-app-toolbar-enabled="true" data-kt-app-aside-enabled="true" data-kt-app-aside-fixed="true" data-kt-app-aside-push-toolbar="true" data-kt-app-aside-push-footer="true" class="app-default">
@@ -878,5 +975,81 @@
   window.addEventListener('orientationchange', ()=>{ if(modal.classList.contains('is-open')) fitModal(); }, {passive:true});
 })();
 </script>
+
+<!-- Color-code research topic badges -->
+<script>
+(function(){
+  const tagColorMap = new Map();
+  let colorIndex = 0;
+  const totalColors = 12;
+
+  function getTagColor(tagText) {
+    const normalized = tagText.trim().toLowerCase();
+    
+    if (!tagColorMap.has(normalized)) {
+      tagColorMap.set(normalized, colorIndex % totalColors);
+      colorIndex++;
+    }
+    
+    return tagColorMap.get(normalized);
+  }
+
+  function colorCodeBadges() {
+    const publicationsList = document.getElementById('publications_list');
+    if (!publicationsList) return;
+
+    const badges = publicationsList.querySelectorAll('.badge');
+    
+    badges.forEach(badge => {
+      const tagText = badge.textContent || badge.getAttribute('data-topic') || badge.getAttribute('data-tag');
+      if (!tagText || tagText.trim() === '—' || tagText.trim() === '') return;
+
+      // Skip citation badges - match patterns like "29 citations", "4 citations", etc.
+      if (/^\d+\s*citation/i.test(tagText.trim()) || tagText.toLowerCase().includes('citation')) {
+        // Remove any color classes
+        for (let i = 0; i < totalColors; i++) {
+          badge.classList.remove(`badge-color-${i}`);
+        }
+        badge.classList.add('badge-default');
+        return;
+      }
+
+      // Remove existing color classes
+      for (let i = 0; i < totalColors; i++) {
+        badge.classList.remove(`badge-color-${i}`);
+      }
+      badge.classList.remove('badge-default');
+
+      // Add the appropriate color class
+      const colorClass = getTagColor(tagText);
+      badge.classList.add(`badge-color-${colorClass}`);
+    });
+  }
+
+  // Run on load
+  colorCodeBadges();
+
+  // Watch for changes
+  const publicationsList = document.getElementById('publications_list');
+  if (publicationsList) {
+    const observer = new MutationObserver(() => {
+      colorCodeBadges();
+    });
+    
+    observer.observe(publicationsList, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
+  // Also run after a short delay to catch any dynamically loaded content
+  setTimeout(colorCodeBadges, 500);
+  setTimeout(colorCodeBadges, 1000);
+
+  window.colorCodeBadges = colorCodeBadges;
+})();
+</script>
+
 </body>
 </html>
